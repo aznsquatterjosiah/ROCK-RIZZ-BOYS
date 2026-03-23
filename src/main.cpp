@@ -1,19 +1,25 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-#define GLOBAL_PWM 1
-
+//Forward Left
+#define FL_PWM 1
 #define FL_IN1 2
 #define FL_IN2 3
 
-#define FR_IN1 10
-#define FR_IN2 11
+//Forward Right
+#define FR_PWM 43
+#define FR_IN1 44
+#define FR_IN2 18
 
+//Back Left
+#define BL_PWM 11
 #define BL_IN1 12
 #define BL_IN2 13
 
-#define BR_IN1 43
-#define BR_IN2 44
+//Back Right
+#define BR_PWM 17
+#define BR_IN1 21
+#define BR_IN2 16
 
 TFT_eSPI tft = TFT_eSPI();
 
