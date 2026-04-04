@@ -1,0 +1,359 @@
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+
+// =====================================================
+// ULTRASONIC PINS
+// =====================================================
+#define TRIG_PIN 1
+#define ECHO_PIN 2
+
+// =====================================================
+// TFT
+// =====================================================
+TFT_eSPI tft = TFT_eSPI();
+
+// =====================================================
+// SETTINGS
+// =====================================================
+const float SOUND_SPEED_MM_PER_US = 0.343f;
+const unsigned long ECHO_TIMEOUT_US = 25000;   // about 4.3 m max
+const int VALID_MIN_MM = 40;
+const int VALID_MAX_MM = 2000;
+
+// Hopper detection / scan settings
+const int DETECT_MAX_MM = 1000;        // only treat readings closer than this as hopper region
+const int MIN_TOL_MM = 10;             // centered if current is within this of best min
+const int EXIT_RISE_MM = 25;           // "passed min" if reading rises this much above min
+const int REQUIRED_RISE_COUNT = 3;     // require several rising readings to avoid noise
+
+// =====================================================
+// STATES
+// =====================================================
+enum AlignState
+{
+  IDLE,
+  SCANNING,
+  PASSED_MIN,
+  CENTERED
+};
+
+AlignState state = IDLE;
+
+// =====================================================
+// VARIABLES
+// =====================================================
+int currentDistanceMM = -1;
+int minDistanceMM = 99999;
+
+bool targetSeen = false;
+bool passedMin = false;
+
+int riseCount = 0;
+
+// =====================================================
+// HELPERS
+// =====================================================
+const char* stateName(AlignState s)
+{
+  switch (s)
+  {
+    case IDLE:       return "IDLE";
+    case SCANNING:   return "SCANNING";
+    case PASSED_MIN: return "PASSED MIN";
+    case CENTERED:   return "CENTERED";
+    default:         return "UNKNOWN";
+  }
+}
+
+bool isValidTarget(int mm)
+{
+  return (mm >= VALID_MIN_MM && mm <= DETECT_MAX_MM);
+}
+
+// =====================================================
+// ULTRASONIC READ
+// =====================================================
+int readUltrasonicMM()
+{
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  unsigned long duration = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1;
+  }
+
+  float distanceMM = (duration * SOUND_SPEED_MM_PER_US) / 2.0f;
+  int mm = (int)distanceMM;
+
+  if (mm < VALID_MIN_MM || mm > VALID_MAX_MM)
+  {
+    return -1;
+  }
+
+  return mm;
+}
+
+int median3(int a, int b, int c)
+{
+  if (a > b) { int t = a; a = b; b = t; }
+  if (b > c) { int t = b; b = c; c = t; }
+  if (a > b) { int t = a; a = b; b = t; }
+  return b;
+}
+
+int readFilteredMM()
+{
+  int a = readUltrasonicMM();
+  delay(20);
+  int b = readUltrasonicMM();
+  delay(20);
+  int c = readUltrasonicMM();
+
+  int valid[3];
+  int count = 0;
+
+  if (a >= 0) valid[count++] = a;
+  if (b >= 0) valid[count++] = b;
+  if (c >= 0) valid[count++] = c;
+
+  if (count == 0) return -1;
+  if (count == 1) return valid[0];
+  if (count == 2) return (valid[0] + valid[1]) / 2;
+
+  return median3(valid[0], valid[1], valid[2]);
+}
+
+// =====================================================
+// DISPLAY
+// =====================================================
+void showStatus()
+{
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  tft.setCursor(10, 10);
+  tft.println("Hopper Min Align");
+
+  tft.setCursor(10, 40);
+  tft.print("State: ");
+  tft.println(stateName(state));
+
+  tft.setCursor(10, 70);
+  tft.print("Current: ");
+  if (currentDistanceMM < 0) tft.println("----");
+  else tft.printf("%d mm\n", currentDistanceMM);
+
+  tft.setCursor(10, 100);
+  tft.print("Min:     ");
+  if (minDistanceMM == 99999) tft.println("----");
+  else tft.printf("%d mm\n", minDistanceMM);
+
+  tft.setCursor(10, 130);
+  tft.print("Seen:    ");
+  tft.println(targetSeen ? "YES" : "NO");
+
+  tft.setCursor(10, 160);
+  tft.print("RiseCnt: ");
+  tft.println(riseCount);
+
+  tft.setCursor(10, 190);
+  if (state == IDLE)
+  {
+    tft.println("Send 'g' to start");
+  }
+  else if (state == SCANNING)
+  {
+    tft.println("Move across hopper");
+  }
+  else if (state == PASSED_MIN)
+  {
+    tft.println("Move back to min");
+  }
+  else if (state == CENTERED)
+  {
+    tft.println("Aligned to shortest");
+  }
+}
+
+// =====================================================
+// CONTROL
+// =====================================================
+void resetScan()
+{
+  state = IDLE;
+  currentDistanceMM = -1;
+  minDistanceMM = 99999;
+  targetSeen = false;
+  passedMin = false;
+  riseCount = 0;
+
+  Serial.println("Reset -> IDLE");
+}
+
+void startScan()
+{
+  state = SCANNING;
+  currentDistanceMM = -1;
+  minDistanceMM = 99999;
+  targetSeen = false;
+  passedMin = false;
+  riseCount = 0;
+
+  Serial.println("Scan started");
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+void setup()
+{
+  Serial.begin(115200);
+  delay(500);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  digitalWrite(TRIG_PIN, LOW);
+
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  // If your board needs TFT backlight enable, uncomment:
+  // pinMode(15, OUTPUT);
+  // digitalWrite(15, HIGH);
+
+  resetScan();
+  showStatus();
+
+  Serial.println("Manual hopper alignment ready");
+  Serial.println("Commands:");
+  Serial.println("  g = start scan");
+  Serial.println("  r = reset");
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+void loop()
+{
+  // --------------------------
+  // Serial commands
+  // --------------------------
+  while (Serial.available() > 0)
+  {
+    char cmd = Serial.read();
+
+    if (cmd == 'g' || cmd == 'G')
+    {
+      startScan();
+    }
+    else if (cmd == 'r' || cmd == 'R')
+    {
+      resetScan();
+    }
+  }
+
+  // --------------------------
+  // Read sensor
+  // --------------------------
+  currentDistanceMM = readFilteredMM();
+
+  // --------------------------
+  // State logic
+  // --------------------------
+  switch (state)
+  {
+    case IDLE:
+    {
+      // do nothing, just show live current distance
+      break;
+    }
+
+    case SCANNING:
+    {
+      if (isValidTarget(currentDistanceMM))
+      {
+        targetSeen = true;
+
+        // New best minimum
+        if (currentDistanceMM < minDistanceMM)
+        {
+          minDistanceMM = currentDistanceMM;
+          riseCount = 0;
+
+          Serial.print("New min: ");
+          Serial.print(minDistanceMM);
+          Serial.println(" mm");
+        }
+        else
+        {
+          // Reading is above the min by enough => maybe passed the closest point
+          if (minDistanceMM != 99999 &&
+              currentDistanceMM > (minDistanceMM + EXIT_RISE_MM))
+          {
+            riseCount++;
+
+            if (riseCount >= REQUIRED_RISE_COUNT)
+            {
+              passedMin = true;
+              state = PASSED_MIN;
+              Serial.println("Passed minimum distance");
+            }
+          }
+          else
+          {
+            riseCount = 0;
+          }
+        }
+      }
+      break;
+    }
+
+    case PASSED_MIN:
+    {
+      if (isValidTarget(currentDistanceMM) && minDistanceMM != 99999)
+      {
+        int errorMM = abs(currentDistanceMM - minDistanceMM);
+
+        if (errorMM <= MIN_TOL_MM)
+        {
+          state = CENTERED;
+          Serial.println("Centered at minimum distance");
+        }
+      }
+      break;
+    }
+
+    case CENTERED:
+    {
+      // stay centered until reset
+      break;
+    }
+  }
+
+  // --------------------------
+  // Serial debug
+  // --------------------------
+  Serial.print("State=");
+  Serial.print(stateName(state));
+  Serial.print(" | Current=");
+  Serial.print(currentDistanceMM);
+  Serial.print(" mm | Min=");
+  if (minDistanceMM == 99999) Serial.print("----");
+  else Serial.print(minDistanceMM);
+  Serial.print(" | Seen=");
+  Serial.print(targetSeen ? "YES" : "NO");
+  Serial.print(" | RiseCnt=");
+  Serial.println(riseCount);
+
+  showStatus();
+  delay(80);
+}

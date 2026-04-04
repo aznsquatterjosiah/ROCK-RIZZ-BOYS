@@ -1,0 +1,93 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+// ====== CHANGE THESE PINS ======
+const int SERVO_PINS[] = {1,2};   // replace with your actual servo signal pins
+const int SERVO_COUNT = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+
+Servo servos[SERVO_COUNT];
+
+// ====== Servo states ======
+enum ServoState
+{
+  COLLECT_MODE,   // 0 deg
+  STORE_MODE,     // 45 deg
+  CLEAR_MODE      // 90 deg
+};
+
+// Convert state to angle
+int angleForState(ServoState state)
+{
+  switch (state)
+  {
+    case COLLECT_MODE: return 180;
+    case STORE_MODE:   return 45;
+    case CLEAR_MODE:   return 90;
+    default:           return 0;
+  }
+}   
+
+// Apply one state to all servos
+void setAllServos(ServoState state)
+{
+  int angle = angleForState(state);
+
+  for (int i = 0; i < SERVO_COUNT; i++)
+  {
+    servos[i].write(angle);
+  }
+
+  Serial.print("State -> ");
+  if (state == COLLECT_MODE) Serial.println("COLLECT ( deg)");
+  else if (state == STORE_MODE) Serial.println("STORE (45 deg)");
+  else if (state == CLEAR_MODE) Serial.println("CLEAR (90 deg)");
+}
+
+// Convenience functions
+void collectMode()
+{
+  setAllServos(COLLECT_MODE);
+}
+
+void storeMode()
+{
+  setAllServos(STORE_MODE);
+}
+
+void clearMode()
+{
+  setAllServos(CLEAR_MODE);
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(500);
+
+  // Standard servo refresh is 50 Hz
+  for (int i = 0; i < SERVO_COUNT; i++)
+  {
+    servos[i].setPeriodHertz(50);
+
+    // attach(pin, min_us, max_us)
+    // Using 1000-2000 us keeps your 0/45/90 states clean and safe to start with
+    servos[i].attach(SERVO_PINS[i], 1000, 2000);
+  }
+
+  // Start in safe middle-ish storage position
+  storeMode();
+  delay(1000);
+}
+
+void loop()
+{
+  // Test cycle
+  collectMode();   // 0 deg
+  delay(2000);
+
+  storeMode();     // 45 deg
+  delay(2000);
+
+  clearMode();     // 90 deg
+  delay(2000);
+}

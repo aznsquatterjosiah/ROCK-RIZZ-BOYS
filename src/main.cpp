@@ -1,159 +1,220 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-//Forward Left
-#define FL_PWM 1
-#define FL_IN1 2
-#define FL_IN2 3
-
-//Forward Right
-#define FR_PWM 43
-#define FR_IN1 44
-#define FR_IN2 18
-
-//Back Left
-#define BL_PWM 11
-#define BL_IN1 12
-#define BL_IN2 13
-
-//Back Right
-#define BR_PWM 17
-#define BR_IN1 21
-#define BR_IN2 16
+// -------------------------
+// Pin setup - change if needed
+// -------------------------
+#define TRIG_LEFT   1
+#define ECHO_LEFT   2
+#define TRIG_RIGHT  3
+#define ECHO_RIGHT  10
 
 TFT_eSPI tft = TFT_eSPI();
 
-//Forward drive motors
-void driveFL_Forward()
-{
-  digitalWrite(FL_IN1, HIGH);
-  digitalWrite(FL_IN2, LOW);
+// -------------------------
+// Tuning
+// -------------------------
+const float SOUND_SPEED_MM_PER_US = 0.343f;   // mm/us
+const unsigned long ECHO_TIMEOUT_US = 25000;  // ~4.3 m max
+const int VALID_MIN_MM = 30;                  // ignore junk too close
+const int VALID_MAX_MM = 2500;                // practical working cap
+const int CENTER_TOL_MM = 20;                 // tune this later
 
-  ledcWrite(0, 200); 
+// -------------------------
+// Median helper for 3 values
+// -------------------------
+unsigned long median3(unsigned long a, unsigned long b, unsigned long c)
+{
+  if (a > b) { unsigned long t = a; a = b; b = t; }
+  if (b > c) { unsigned long t = b; b = c; c = t; }
+  if (a > b) { unsigned long t = a; a = b; b = t; }
+  return b;
 }
 
-void driveFR_Forward()
+// -------------------------
+// Read one ultrasonic in mm
+// Returns -1 if invalid / timeout
+// pulseIn reads pulse length in microseconds
+// -------------------------
+int readUltrasonicMM(int trigPin, int echoPin)
 {
-  digitalWrite(FR_IN1, HIGH);
-  digitalWrite(FR_IN2, LOW);
+  // clear trigger
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
 
-  ledcWrite(0, 200); 
+  // 10 us trigger pulse
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long duration = pulseIn(echoPin, HIGH, ECHO_TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1;
+  }
+
+  // Distance = (time * speed of sound) / 2
+  float distance_mm = (duration * SOUND_SPEED_MM_PER_US) / 2.0f;
+  int mm = (int)distance_mm;
+
+  if (mm < VALID_MIN_MM || mm > VALID_MAX_MM)
+  {
+    return -1;
+  }
+
+  return mm;
 }
 
-void driveBL_Forward()
+// -------------------------
+// Filtered read using 3 samples
+// -------------------------
+int readFilteredMM(int trigPin, int echoPin)
 {
-  digitalWrite(BL_IN1, HIGH);
-  digitalWrite(BL_IN2, LOW);
+  int a = readUltrasonicMM(trigPin, echoPin);
+  delay(25);
+  int b = readUltrasonicMM(trigPin, echoPin);
+  delay(25);
+  int c = readUltrasonicMM(trigPin, echoPin);
 
-  ledcWrite(0, 200); 
+  // handle invalid combinations
+  int validCount = 0;
+  if (a != -1) validCount++;
+  if (b != -1) validCount++;
+  if (c != -1) validCount++;
+
+  if (validCount == 0) return -1;
+  if (validCount == 1)
+  {
+    if (a != -1) return a;
+    if (b != -1) return b;
+    return c;
+  }
+  if (validCount == 2)
+  {
+    if (a == -1) return (b + c) / 2;
+    if (b == -1) return (a + c) / 2;
+    return (a + b) / 2;
+  }
+
+  return (int)median3((unsigned long)a, (unsigned long)b, (unsigned long)c);
 }
 
-void driveBR_Forward()
+// -------------------------
+// LCD display
+// -------------------------
+void showStatus(int leftMM, int rightMM, const char* state, int errorMM)
 {
-  digitalWrite(BR_IN1, HIGH);
-  digitalWrite(BR_IN2, LOW);
-
-  ledcWrite(0, 200); 
-}
-
-//Reverse drive motors
-void driveFL_Reverse()
-{
-  digitalWrite(FL_IN1, LOW);
-  digitalWrite(FL_IN2, HIGH);
-
-  ledcWrite(0, 200); 
-}
-
-void driveFR_Reverse()
-{
-  digitalWrite(FR_IN1, LOW);
-  digitalWrite(FR_IN2, HIGH);
-
-  ledcWrite(0, 200); 
-}
-
-void driveBL_Reverse()
-{
-  digitalWrite(BL_IN1, LOW);
-  digitalWrite(BL_IN2, HIGH);
-
-  ledcWrite(0, 200); 
-}
-
-void driveBR_Reverse()
-{
-  digitalWrite(BR_IN1, LOW);
-  digitalWrite(BR_IN2, HIGH);
-
-  ledcWrite(0, 200); 
-}
-
-//Robot drive forward
-void robot_Forward()
-{
-  driveFL_Forward();
-  driveFR_Forward();
-  driveBL_Forward();
-  driveBR_Forward();
-}
-
-//Robot drive reverse
-void robot_Reverse()
-{
-  driveFL_Reverse();
-  driveFR_Reverse();
-  driveBL_Reverse();
-  driveBR_Reverse();
-}
-
-//Robot strafe right
-void robot_Right()
-{
-  driveFL_Forward();
-  driveFR_Reverse();
-  driveBL_Reverse();
-  driveBR_Forward();
-}
-
-//Robot strafe left
-void robot_Left()
-{
-  driveFL_Reverse();
-  driveFR_Forward();
-  driveBL_Forward();
-  driveBR_Reverse();
-}
-
-//Setup
-void setup()
-{
-  tft.init();
   tft.fillScreen(TFT_BLACK);
-  tft.setRotation(1);
-
-  pinMode(GLOBAL_PWM, OUTPUT);
-
-  pinMode(FL_IN1, OUTPUT);
-  pinMode(FL_IN2, OUTPUT);
-
-  pinMode(FR_IN1, OUTPUT);
-  pinMode(FR_IN2, OUTPUT);
-
-  pinMode(BL_IN1, OUTPUT);
-  pinMode(BL_IN2, OUTPUT);
-
-  pinMode(BR_IN1, OUTPUT);
-  pinMode(BR_IN2, OUTPUT);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
 
   tft.setCursor(10, 10);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(4);
-  tft.println("Motor driving ready.");
+  tft.println("2 Ultrasonic Test");
+
+  tft.setCursor(10, 45);
+  tft.print("Left:  ");
+  if (leftMM < 0) tft.println("----");
+  else            tft.printf("%d mm\n", leftMM);
+
+  tft.setCursor(10, 75);
+  tft.print("Right: ");
+  if (rightMM < 0) tft.println("----");
+  else             tft.printf("%d mm\n", rightMM);
+
+  tft.setCursor(10, 105);
+  tft.print("Error: ");
+  tft.printf("%d mm\n", errorMM);
+
+  tft.setCursor(10, 140);
+  tft.print("State: ");
+  tft.println(state);
 }
 
-//Main
-void loop() 
+// -------------------------
+// Setup
+// -------------------------
+void setup()
 {
-  // put your main code here, to run repeatedly:
+  Serial.begin(115200);
+  delay(500);
+
+  pinMode(TRIG_LEFT, OUTPUT);
+  pinMode(ECHO_LEFT, INPUT);
+  pinMode(TRIG_RIGHT, OUTPUT);
+  pinMode(ECHO_RIGHT, INPUT);
+
+  digitalWrite(TRIG_LEFT, LOW);
+  digitalWrite(TRIG_RIGHT, LOW);
+
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  // If your board needs TFT backlight enable, uncomment:
+  // pinMode(15, OUTPUT);
+  // digitalWrite(15, HIGH);
+
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(10, 10);
+  tft.println("Ultrasonic ready");
+
+  Serial.println("2x HC-SR04 alignment test ready");
+}
+
+// -------------------------
+// Loop
+// -------------------------
+void loop()
+{
+  // Read sensors sequentially to reduce cross-talk
+  int leftMM = readFilteredMM(TRIG_LEFT, ECHO_LEFT);
+  delay(30);
+  int rightMM = readFilteredMM(TRIG_RIGHT, ECHO_RIGHT);
+
+  const char* state = "NO TARGET";
+  int errorMM = 0;
+
+  if (leftMM >= 0 && rightMM >= 0)
+  {
+    errorMM = leftMM - rightMM;
+
+    if (abs(errorMM) <= CENTER_TOL_MM)
+    {
+      state = "CENTERED";
+    }
+    else if (errorMM < 0)
+    {
+      // left is farther than right? no:
+      // error = left - right
+      // if negative, left < right => left side closer
+      state = "MOVE RIGHT";
+    }
+    else
+    {
+      state = "MOVE LEFT";
+    }
+  }
+  else if (leftMM >= 0)
+  {
+    state = "TARGET LEFT";
+  }
+  else if (rightMM >= 0)
+  {
+    state = "TARGET RIGHT";
+  }
+
+  Serial.print("L=");
+  Serial.print(leftMM);
+  Serial.print(" mm, R=");
+  Serial.print(rightMM);
+  Serial.print(" mm, err=");
+  Serial.print(errorMM);
+  Serial.print(" -> ");
+  Serial.println(state);
+
+  showStatus(leftMM, rightMM, state, errorMM);
+
+  delay(100);
 }

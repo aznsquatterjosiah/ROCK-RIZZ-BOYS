@@ -1,0 +1,53 @@
+#include <Arduino.h>
+ 
+static constexpr int SENSOR_PIN = 1;     // OUT -> GPIO1
+static constexpr int NUM_SAMPLES = 16;
+ 
+// Change this after you test white vs black
+static int thresholdRaw = 2000;
+ 
+int readAveragedRaw(int pin, int samples) {
+  uint32_t sum = 0;
+  for (int i = 0; i < samples; i++) {
+    sum += analogRead(pin);
+    delay(2);
+  }
+  return sum / samples;
+}
+ 
+int readAveragedMilliVolts(int pin, int samples) {
+  uint32_t sum = 0;
+  for (int i = 0; i < samples; i++) {
+    sum += analogReadMilliVolts(pin);
+    delay(2);
+  }
+  return sum / samples;
+}
+ 
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+ 
+  pinMode(SENSOR_PIN, INPUT);
+ 
+  // ESP32-S3 Arduino core defaults can vary; force a simple known setup
+  analogReadResolution(12);                         // 0..4095
+  analogSetPinAttenuation(SENSOR_PIN, ADC_11db);   // widest range
+ 
+  Serial.println();
+  Serial.println("Cytron Maker Reflect test starting...");
+  Serial.println("Move WHITE paper and BLACK tape under the sensor.");
+  Serial.println("Darker surface should read HIGHER.");
+  Serial.println();
+}
+ 
+void loop() {
+  int raw = readAveragedRaw(SENSOR_PIN, NUM_SAMPLES);
+  int mv  = readAveragedMilliVolts(SENSOR_PIN, NUM_SAMPLES);
+ 
+  const char* state = (raw > thresholdRaw) ? "DARK / LESS REFLECTIVE" : "LIGHT / MORE REFLECTIVE";
+ 
+  Serial.printf("raw=%4d   mv=%4d   state=%s\n", raw, mv, state);
+ 
+  delay(200);
+}  
