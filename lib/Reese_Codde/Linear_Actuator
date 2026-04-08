@@ -1,0 +1,71 @@
+#include <Arduino.h>
+
+// L298N direction pins
+const int IN1 = 16;
+const int IN2 = 17;
+
+void stopActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+}
+
+void extendActuator() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+}
+
+void retractActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+}
+
+void setup() {
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  stopActuator();
+
+  Serial.begin(115200);
+  delay(500);
+
+  Serial.println();
+  Serial.println("Linear actuator serial test");
+  Serial.println("Type:");
+  Serial.println("  e = extend");
+  Serial.println("  r = retract");
+  Serial.println("  s = stop");
+}
+
+void loop() {
+  if (Serial.available() > 0) {
+    char cmd = Serial.read();
+
+    // Ignore newline / carriage return from serial monitor
+    if (cmd == '\n' || cmd == '\r') {
+      return;
+    }
+
+    // Working out:
+    // e -> IN1=1, IN2=0
+    // r -> IN1=0, IN2=1
+    // s -> IN1=0, IN2=0
+
+    if (cmd == 'e' || cmd == 'E') {
+      extendActuator();
+      Serial.println("EXTENDING");
+    }
+    else if (cmd == 'r' || cmd == 'R') {
+      retractActuator();
+      Serial.println("RETRACTING");
+    }
+    else if (cmd == 's' || cmd == 'S') {
+      stopActuator();
+      Serial.println("STOPPED");
+    }
+    else {
+      Serial.print("Unknown command: ");
+      Serial.println(cmd);
+      Serial.println("Use e, r, or s");
+    }
+  }
+}
