@@ -1,0 +1,333 @@
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+
+// =====================================================
+// PIN SETUP
+// =====================================================
+
+// ---------- Global PWM ----------
+#define GLOBAL_PWM 1
+
+// ---------- Motor pins ----------
+#define FL_IN1 2
+#define FL_IN2 3
+
+#define FR_IN1 10
+#define FR_IN2 11
+
+#define BL_IN1 12
+#define BL_IN2 13
+
+#define BR_IN1 43
+#define BR_IN2 44
+
+// ---------- Ultrasonic pins ----------
+// IMPORTANT: changed from 10/11 because those clash with FR motor pins
+#define US_TRIG 12 
+#define US_ECHO 13
+
+// ---------- PWM config ----------
+#define PWM_CHANNEL 0
+#define PWM_FREQ 20000
+#define PWM_RESOLUTION 8   // 0-255
+
+// =====================================================
+// SETTINGS
+// =====================================================
+
+const int APPROACH_SPEED = 160;          // slower, safer approach
+const float STOP_DISTANCE_CM = 10.0f;    // stop when <= this
+const float MIN_VALID_CM = 2.0f;
+const float MAX_VALID_CM = 200.0f;
+const unsigned long TIMEOUT_US = 30000;
+
+// =====================================================
+// STATE MACHINE
+// =====================================================
+
+enum RobotState
+{
+  STAGE1_APPROACH = 0,
+  STAGE1_STOPPED,
+  STAGE1_FAULT
+};
+
+RobotState currentState = STAGE1_APPROACH;
+
+// =====================================================
+// MOTOR CONTROL
+// =====================================================
+
+int motorSpeed = 0;
+
+void setGlobalSpeed(int speedValue)
+{
+  motorSpeed = constrain(speedValue, 0, 255);
+  ledcWrite(PWM_CHANNEL, motorSpeed);
+}
+
+void stopMotor(int in1, int in2)
+{
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
+}
+
+void driveMotorForward(int in1, int in2)
+{
+  digitalWrite(in1, HIGH);
+  digitalWrite(in2, LOW);
+}
+
+void driveMotorReverse(int in1, int in2)
+{
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, HIGH);
+}
+
+// Individual motors
+void driveFL_Forward() { driveMotorForward(FL_IN1, FL_IN2); }
+void driveFL_Reverse() { driveMotorReverse(FL_IN1, FL_IN2); }
+void driveFL_Stop()    { stopMotor(FL_IN1, FL_IN2); }
+
+void driveFR_Forward() { driveMotorForward(FR_IN1, FR_IN2); }
+void driveFR_Reverse() { driveMotorReverse(FR_IN1, FR_IN2); }
+void driveFR_Stop()    { stopMotor(FR_IN1, FR_IN2); }
+
+void driveBL_Forward() { driveMotorForward(BL_IN1, BL_IN2); }
+void driveBL_Reverse() { driveMotorReverse(BL_IN1, BL_IN2); }
+void driveBL_Stop()    { stopMotor(BL_IN1, BL_IN2); }
+
+void driveBR_Forward() { driveMotorForward(BR_IN1, BR_IN2); }
+void driveBR_Reverse() { driveMotorReverse(BR_IN1, BR_IN2); }
+void driveBR_Stop()    { stopMotor(BR_IN1, BR_IN2); }
+
+// Whole robot motions
+void robot_Stop()
+{
+  driveFL_Stop();
+  driveFR_Stop();
+  driveBL_Stop();
+  driveBR_Stop();
+}
+
+void robot_Forward()
+{
+  // If robot moves backward in real life, flip these motor directions here
+  driveFL_Forward();
+  driveFR_Forward();
+  driveBL_Forward();
+  driveBR_Forward();
+}
+
+void driveForwardSlow()
+{
+  setGlobalSpeed(APPROACH_SPEED);
+  robot_Forward();
+}
+
+void stopDrive()
+{
+  robot_Stop();
+  setGlobalSpeed(0);
+}
+
+// =====================================================
+// ULTRASONIC
+// =====================================================
+
+float readUltrasonicCM(int trigPin, int echoPin)
+{
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long duration = pulseIn(echoPin, HIGH, TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1.0f; // no echo
+  }
+
+  float distance = duration * 0.0343f / 2.0f;
+
+  if (distance < MIN_VALID_CM || distance > MAX_VALID_CM)
+  {
+    return -1.0f;
+  }
+
+  return distance;
+}
+
+float readFilteredDistanceCM()
+{
+  const int samples = 5;
+  float sum = 0.0f;
+  int count = 0;
+
+  for (int i = 0; i < samples; i++)
+  {
+    float d = readUltrasonicCM(US_TRIG, US_ECHO);
+    if (d > 0.0f)
+    {
+      sum += d;
+      count++;
+    }
+    delay(10);
+  }
+
+  if (count == 0)
+  {
+    return -1.0f;
+  }
+
+  return sum / count;
+}
+
+// =====================================================
+// DISPLAY
+// =====================================================
+
+void drawStatus(float dist, const char *motion, const char *stateText)
+{
+  tft.fillScreen(TFT_BLACK);
+
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  tft.setCursor(10, 10);
+  tft.println("Stage 1");
+
+  tft.setCursor(10, 40);
+  tft.print("State: ");
+  tft.println(stateText);
+
+  tft.setCursor(10, 70);
+  tft.print("Motion: ");
+  tft.println(motion);
+
+  tft.setCursor(10, 100);
+  tft.print("Dist: ");
+  if (dist < 0.0f)
+  {
+    tft.println("No reading");
+  }
+  else
+  {
+    tft.print(dist, 1);
+    tft.println(" cm");
+  }
+
+  tft.setCursor(10, 130);
+  tft.print("Stop at: ");
+  tft.print(STOP_DISTANCE_CM, 1);
+  tft.println(" cm");
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup()
+{
+  Serial.begin(115200);
+
+  // TFT
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  // Motor pins
+  pinMode(FL_IN1, OUTPUT);
+  pinMode(FL_IN2, OUTPUT);
+
+  pinMode(FR_IN1, OUTPUT);
+  pinMode(FR_IN2, OUTPUT);
+
+  pinMode(BL_IN1, OUTPUT);
+  pinMode(BL_IN2, OUTPUT);
+
+  pinMode(BR_IN1, OUTPUT);
+  pinMode(BR_IN2, OUTPUT);
+
+  // Ultrasonic pins
+  pinMode(US_TRIG, OUTPUT);
+  pinMode(US_ECHO, INPUT);
+  digitalWrite(US_TRIG, LOW);
+
+  // PWM
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(GLOBAL_PWM, PWM_CHANNEL);
+  setGlobalSpeed(0);
+
+  robot_Stop();
+
+  Serial.println("Stage 1 ultrasonic approach started");
+  drawStatus(-1.0f, "STOPPED", "APPROACH");
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop()
+{
+  float distanceCM = readFilteredDistanceCM();
+
+  switch (currentState)
+  {
+    case STAGE1_APPROACH:
+    {
+      if (distanceCM < 0.0f)
+      {
+        // Fail-safe
+        stopDrive();
+        currentState = STAGE1_FAULT;
+
+        Serial.println("FAULT: No valid ultrasonic reading");
+        drawStatus(distanceCM, "STOPPED", "FAULT");
+      }
+      else if (distanceCM <= STOP_DISTANCE_CM)
+      {
+        stopDrive();
+        currentState = STAGE1_STOPPED;
+
+        Serial.print("STOPPED at ");
+        Serial.print(distanceCM, 1);
+        Serial.println(" cm");
+        drawStatus(distanceCM, "STOPPED", "STOPPED");
+      }
+      else
+      {
+        driveForwardSlow();
+
+        Serial.print("APPROACHING, distance = ");
+        Serial.print(distanceCM, 1);
+        Serial.println(" cm");
+
+        drawStatus(distanceCM, "FORWARD", "APPROACH");
+      }
+      break;
+    }
+
+    case STAGE1_STOPPED:
+    {
+      stopDrive();
+      drawStatus(distanceCM, "STOPPED", "STOPPED");
+      break;
+    }
+
+    case STAGE1_FAULT:
+    {
+      stopDrive();
+      drawStatus(distanceCM, "STOPPED", "FAULT");
+      break;
+    }
+  }
+
+  delay(50);
+}
