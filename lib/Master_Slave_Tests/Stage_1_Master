@@ -1,0 +1,227 @@
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+
+// ============================
+// MASTER <-> SLAVE UART LINK
+// Change these to the pins you
+// are actually using for board-to-board comms
+// ============================
+#define LINK_RX 18
+#define LINK_TX 17
+
+HardwareSerial LinkSerial(1);
+
+// ============================
+// Ultrasonic pins on MASTER
+// ============================
+#define US_TRIG 12
+#define US_ECHO 13
+
+const float STOP_DISTANCE_CM = 10.0f;
+const float MIN_VALID_CM     = 2.0f;
+const float MAX_VALID_CM     = 200.0f;
+const unsigned long TIMEOUT_US = 30000;
+
+// ============================
+// State machine
+// ============================
+enum RobotState
+{
+  STAGE1_APPROACH = 0,
+  STAGE1_STOPPED,
+  STAGE1_FAULT
+};
+
+RobotState currentState = STAGE1_APPROACH;
+
+// command resend control
+String lastSentCmd = "";
+unsigned long lastSendMs = 0;
+const unsigned long SEND_PERIOD_MS = 100;
+
+// ============================
+// Ultrasonic
+// ============================
+float readUltrasonicCM(int trigPin, int echoPin)
+{
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  unsigned long duration = pulseIn(echoPin, HIGH, TIMEOUT_US);
+
+  if (duration == 0) return -1.0f;
+
+  float distance = duration * 0.0343f / 2.0f;
+
+  if (distance < MIN_VALID_CM || distance > MAX_VALID_CM)
+    return -1.0f;
+
+  return distance;
+}
+
+float readFilteredDistanceCM()
+{
+  const int samples = 5;
+  float sum = 0.0f;
+  int count = 0;
+
+  for (int i = 0; i < samples; i++)
+  {
+    float d = readUltrasonicCM(US_TRIG, US_ECHO);
+    if (d > 0.0f)
+    {
+      sum += d;
+      count++;
+    }
+    delay(10);
+  }
+
+  if (count == 0) return -1.0f;
+  return sum / count;
+}
+
+// ============================
+// UART command send
+// ============================
+void sendCommandToSlave(const String &cmd)
+{
+  unsigned long now = millis();
+
+  if (cmd != lastSentCmd || (now - lastSendMs) >= SEND_PERIOD_MS)
+  {
+    LinkSerial.println(cmd);
+    lastSentCmd = cmd;
+    lastSendMs = now;
+
+    Serial.print("Sent to slave: ");
+    Serial.println(cmd);
+  }
+}
+
+// ============================
+// Display
+// ============================
+void drawStatus(float dist, const char *stateText, const char *commandText)
+{
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  tft.setCursor(10, 10);
+  tft.println("MASTER Stage 1");
+
+  tft.setCursor(10, 40);
+  tft.print("State: ");
+  tft.println(stateText);
+
+  tft.setCursor(10, 70);
+  tft.print("Cmd: ");
+  tft.println(commandText);
+
+  tft.setCursor(10, 100);
+  tft.print("Dist: ");
+  if (dist < 0)
+  {
+    tft.println("No reading");
+  }
+  else
+  {
+    tft.print(dist, 1);
+    tft.println(" cm");
+  }
+
+  tft.setCursor(10, 130);
+  tft.print("Stop @ ");
+  tft.print(STOP_DISTANCE_CM, 1);
+  tft.println(" cm");
+}
+
+// ============================
+// Setup
+// ============================
+void setup()
+{
+  Serial.begin(115200);
+
+  LinkSerial.begin(115200, SERIAL_8N1, LINK_RX, LINK_TX);
+
+  pinMode(US_TRIG, OUTPUT);
+  pinMode(US_ECHO, INPUT);
+  digitalWrite(US_TRIG, LOW);
+
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  Serial.println("MASTER ready");
+  drawStatus(-1.0f, "APPROACH", "STOP");
+}
+
+// ============================
+// Loop
+// ============================
+void loop()
+{
+  float distanceCM = readFilteredDistanceCM();
+  String commandToSend = "STOP";
+
+  switch (currentState)
+  {
+    case STAGE1_APPROACH:
+    {
+      if (distanceCM < 0.0f)
+      {
+        currentState = STAGE1_FAULT;
+        commandToSend = "STOP";
+
+        Serial.println("FAULT: No ultrasonic reading");
+        drawStatus(distanceCM, "FAULT", "STOP");
+      }
+      else if (distanceCM <= STOP_DISTANCE_CM)
+      {
+        currentState = STAGE1_STOPPED;
+        commandToSend = "STOP";
+
+        Serial.print("STOPPED at ");
+        Serial.print(distanceCM, 1);
+        Serial.println(" cm");
+
+        drawStatus(distanceCM, "STOPPED", "STOP");
+      }
+      else
+      {
+        commandToSend = "FWD";
+
+        Serial.print("APPROACHING: ");
+        Serial.print(distanceCM, 1);
+        Serial.println(" cm");
+
+        drawStatus(distanceCM, "APPROACH", "FWD");
+      }
+      break;
+    }
+
+    case STAGE1_STOPPED:
+    {
+      commandToSend = "STOP";
+      drawStatus(distanceCM, "STOPPED", "STOP");
+      break;
+    }
+
+    case STAGE1_FAULT:
+    {
+      commandToSend = "STOP";
+      drawStatus(distanceCM, "FAULT", "STOP");
+      break;
+    }
+  }
+
+  sendCommandToSlave(commandToSend);
+  delay(50);
+}

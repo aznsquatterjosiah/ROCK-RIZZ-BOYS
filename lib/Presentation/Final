@@ -1,0 +1,431 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+#include <TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+
+Servo wallLeftServo;
+Servo wallRightServo;
+Servo scoopServo;
+
+static const int WALL_LEFT_PIN  = 16;
+static const int WALL_RIGHT_PIN = 21;
+static const int SCOOP_PIN      = 17;
+
+// =====================================================
+// MAIN TRIGGER ULTRASONIC (starts full sequence)
+// =====================================================
+#define US_TRIG 10
+#define US_ECHO 11
+
+// =====================================================
+// HOPPER ULTRASONIC
+// =====================================================
+#define HOPPER_TRIG_PIN 12
+#define HOPPER_ECHO_PIN 13
+
+// =====================================================
+// LINEAR ACTUATOR
+// =====================================================
+static const int ACTUATOR_IN1 = 2;
+static const int ACTUATOR_IN2 = 3;
+
+// =====================================================
+// EXTENDER RACK MOTOR DRIVER
+// =====================================================
+static const int RACK_ENA = 1;   // PWM
+static const int RACK_IN1 = 44;   // Direction 1
+static const int RACK_IN2 = 18;   // Direction 2
+
+static const int RACK_PWM_CHANNEL = 0;
+static const int RACK_PWM_FREQ    = 1000;
+static const int RACK_PWM_RES     = 8;
+static const int RACK_FULL_SPEED  = 255;
+
+// =====================================================
+// GENERAL SETTINGS
+// =====================================================
+const float TRIGGER_DISTANCE_CM = 5.0;
+const unsigned long TIMEOUT_US  = 30000;
+bool hasRunSequence = false;
+
+// =====================================================
+// HOPPER SIMPLE DETECT SETTINGS
+// =====================================================
+const float SOUND_SPEED_MM_PER_US      = 0.343f;
+const unsigned long HOPPER_ECHO_TIMEOUT_US = 25000;
+const int VALID_MIN_MM                 = 40;
+const int VALID_MAX_MM                 = 2000;
+
+const int HOPPER_TRIGGER_MM            = 200;   // 20 cm
+const unsigned long RACK_FORWARD_TIMEOUT_MS = 8000;
+const unsigned long RACK_REVERSE_TIME_MS    = 2800;
+
+// =====================================================
+// HELPERS
+// =====================================================
+void showMessage(const char* line1, const char* line2 = "")
+{
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  tft.setCursor(20, 40);
+  tft.println(line1);
+
+  if (line2[0] != '\0')
+  {
+    tft.setCursor(20, 80);
+    tft.println(line2);
+  }
+}
+
+// =====================================================
+// MAIN TRIGGER ULTRASONIC
+// =====================================================
+float readUltrasonicCM()
+{
+  digitalWrite(US_TRIG, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(US_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(US_TRIG, LOW);
+
+  unsigned long duration = pulseIn(US_ECHO, HIGH, TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1.0;
+  }
+
+  float distance = duration * 0.0343f / 2.0f;
+  return distance;
+}
+
+// =====================================================
+// HOPPER ULTRASONIC
+// =====================================================
+int readHopperUltrasonicMM()
+{
+  digitalWrite(HOPPER_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(HOPPER_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(HOPPER_TRIG_PIN, LOW);
+
+  unsigned long duration = pulseIn(HOPPER_ECHO_PIN, HIGH, HOPPER_ECHO_TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1;
+  }
+
+  float distanceMM = (duration * SOUND_SPEED_MM_PER_US) / 2.0f;
+  int mm = (int)distanceMM;
+
+  if (mm < VALID_MIN_MM || mm > VALID_MAX_MM)
+  {
+    return -1;
+  }
+
+  return mm;
+}
+
+int median3(int a, int b, int c)
+{
+  if (a > b) { int t = a; a = b; b = t; }
+  if (b > c) { int t = b; b = c; c = t; }
+  if (a > b) { int t = a; a = b; b = t; }
+  return b;
+}
+
+int readFilteredHopperMM()
+{
+  int a = readHopperUltrasonicMM();
+  delay(20);
+  int b = readHopperUltrasonicMM();
+  delay(20);
+  int c = readHopperUltrasonicMM();
+
+  int valid[3];
+  int count = 0;
+
+  if (a >= 0) valid[count++] = a;
+  if (b >= 0) valid[count++] = b;
+  if (c >= 0) valid[count++] = c;
+
+  if (count == 0) return -1;
+  if (count == 1) return valid[0];
+  if (count == 2) return (valid[0] + valid[1]) / 2;
+
+  return median3(valid[0], valid[1], valid[2]);
+}
+
+// =====================================================
+// SCOOP
+// =====================================================
+void moveScoop(int angle, int waitMs)
+{
+  scoopServo.attach(SCOOP_PIN, 500, 2400);
+  scoopServo.write(angle);
+  delay(waitMs);
+  scoopServo.detach();
+}
+
+// =====================================================
+// LINEAR ACTUATOR
+// =====================================================
+void stopActuator()
+{
+  digitalWrite(ACTUATOR_IN1, LOW);
+  digitalWrite(ACTUATOR_IN2, LOW);
+}
+
+void actuatorUp()
+{
+  digitalWrite(ACTUATOR_IN1, HIGH);
+  digitalWrite(ACTUATOR_IN2, LOW);
+}
+
+void actuatorRetract()
+{
+  digitalWrite(ACTUATOR_IN1, LOW);
+  digitalWrite(ACTUATOR_IN2, HIGH);
+}
+
+void moveActuatorUpFor(unsigned long timeMs)
+{
+  actuatorUp();
+  delay(timeMs);
+  stopActuator();
+}
+
+void moveActuatorRetractFor(unsigned long timeMs)
+{
+  actuatorRetract();
+  delay(timeMs);
+  stopActuator();
+}
+
+// =====================================================
+// RACK
+// =====================================================
+void stopRack()
+{
+  ledcWrite(RACK_PWM_CHANNEL, 0);
+  digitalWrite(RACK_IN1, LOW);
+  digitalWrite(RACK_IN2, LOW);
+}
+
+void rackForward()
+{
+  digitalWrite(RACK_IN1, HIGH);
+  digitalWrite(RACK_IN2, LOW);
+  ledcWrite(RACK_PWM_CHANNEL, RACK_FULL_SPEED);
+}
+
+void rackReverse()
+{
+  digitalWrite(RACK_IN1, LOW);
+  digitalWrite(RACK_IN2, HIGH);
+  ledcWrite(RACK_PWM_CHANNEL, RACK_FULL_SPEED);
+}
+
+// =====================================================
+// SIMPLE HOPPER LOGIC
+// Extend rack until hopper ultrasonic sees anything
+// within 20 cm, then retract
+// =====================================================
+bool waitForHopperWithin20cm(unsigned long timeoutMs)
+{
+  unsigned long startTime = millis();
+
+  while (millis() - startTime < timeoutMs)
+  {
+    int hopperMM = readFilteredHopperMM();
+
+    Serial.print("Hopper Distance: ");
+    Serial.print(hopperMM);
+    Serial.println(" mm");
+
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(2);
+
+    tft.setCursor(10, 20);
+    tft.println("Rack Forward");
+
+    tft.setCursor(10, 60);
+    tft.print("Hopper: ");
+    if (hopperMM < 0)
+      tft.println("----");
+    else
+      tft.printf("%d mm\n", hopperMM);
+
+    tft.setCursor(10, 100);
+    tft.println("Trigger <= 200mm");
+
+    if (hopperMM > 0 && hopperMM <= HOPPER_TRIGGER_MM)
+    {
+      Serial.println("Hopper seen within 20 cm");
+      return true;
+    }
+
+    delay(80);
+  }
+
+  Serial.println("Hopper detect timeout");
+  return false;
+}
+
+void runRackUntil20cmThenRetract()
+{
+  showMessage("Rack Forward", "Looking for 20cm");
+  rackForward();
+
+  bool seen = waitForHopperWithin20cm(RACK_FORWARD_TIMEOUT_MS);
+
+  stopRack();
+  delay(500);
+
+  if (seen)
+    showMessage("Seen <= 20cm", "Retracting");
+  else
+    showMessage("No detect", "Retracting");
+
+  rackReverse();
+  delay(RACK_REVERSE_TIME_MS);
+
+  stopRack();
+  delay(1000);
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+void setup()
+{
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
+
+  pinMode(US_TRIG, OUTPUT);
+  pinMode(US_ECHO, INPUT);
+
+  pinMode(HOPPER_TRIG_PIN, OUTPUT);
+  pinMode(HOPPER_ECHO_PIN, INPUT);
+  digitalWrite(HOPPER_TRIG_PIN, LOW);
+
+  pinMode(ACTUATOR_IN1, OUTPUT);
+  pinMode(ACTUATOR_IN2, OUTPUT);
+  stopActuator();
+
+  pinMode(RACK_IN1, OUTPUT);
+  pinMode(RACK_IN2, OUTPUT);
+
+  Serial.begin(115200);
+
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  showMessage("Wall + Scoop", "LilyGO T-S3");
+
+  wallLeftServo.setPeriodHertz(50);
+  wallRightServo.setPeriodHertz(50);
+  scoopServo.setPeriodHertz(50);
+
+  wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
+  wallRightServo.attach(WALL_RIGHT_PIN, 500, 2400);
+
+  ledcSetup(RACK_PWM_CHANNEL, RACK_PWM_FREQ, RACK_PWM_RES);
+  ledcAttachPin(RACK_ENA, RACK_PWM_CHANNEL);
+  stopRack();
+
+  // Starting wall position
+  wallLeftServo.write(0);
+  wallRightServo.write(90);
+
+  // Starting scoop position
+  moveScoop(0, 1000);
+
+  // Startup actuator move
+  showMessage("Actuator Up", "3 sec");
+  moveActuatorUpFor(3000);
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+void loop()
+{
+  if (hasRunSequence)
+  {
+    showMessage("Sequence Done");
+    delay(200);
+    return;
+  }
+
+  float distanceCM = readUltrasonicCM();
+
+  Serial.print("Front Distance: ");
+  Serial.println(distanceCM);
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  tft.setCursor(20, 20);
+  tft.println("Wall Control");
+
+  tft.setCursor(20, 60);
+  tft.print("Dist: ");
+  tft.print(distanceCM);
+  tft.println(" cm");
+
+  if (distanceCM > 0 && distanceCM < TRIGGER_DISTANCE_CM)
+  {
+    Serial.println("Object detected under 5 cm");
+    Serial.println("Running full sequence once");
+
+    // Wall Extend
+    showMessage("Wall Extend");
+    wallLeftServo.write(90);
+    wallRightServo.write(0);
+    delay(2000);
+
+    // Wall Retract
+    showMessage("Wall Retract");
+    wallLeftServo.write(0);
+    wallRightServo.write(90);
+    delay(2000);
+
+    // Scoop to 0
+    showMessage("Scoop 0");
+    moveScoop(0, 2000);
+
+    // Scoop to 145
+    showMessage("Scoop 145");
+    moveScoop(145, 2000);
+
+    // Actuator up
+    showMessage("Actuator Up", "10 sec");
+    moveActuatorUpFor(10000);
+
+    // SIMPLE hopper behaviour:
+    // move rack forward until hopper sensor sees something within 20 cm,
+    // then retract
+    runRackUntil20cmThenRetract();
+
+    // Retract actuator at the end
+    showMessage("Actuator Retract", "End");
+    moveActuatorRetractFor(15000);
+
+    hasRunSequence = true;
+  }
+
+  delay(100);
+}

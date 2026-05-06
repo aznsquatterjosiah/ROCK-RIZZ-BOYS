@@ -1,0 +1,188 @@
+#include <Arduino.h>
+
+// ============================
+// MASTER <-> SLAVE UART LINK
+// Change to your chosen pins
+// ============================
+#define LINK_RX 18
+#define LINK_TX 17
+
+HardwareSerial LinkSerial(1);
+
+// ============================
+// Motor pin map on SLAVE
+// ============================
+
+// FL: PWM 1, DIR 2, FG 3
+#define FL_PWM 1
+#define FL_DIR 2
+#define FL_FG  3
+
+// FR: PWM 43, DIR 44, FG 10
+#define FR_PWM 43
+#define FR_DIR 44
+#define FR_FG  10
+
+// BR: PWM 11, DIR 12, FG 13
+#define BR_PWM 11
+#define BR_DIR 12
+#define BR_FG  13
+
+// BL: PWM 17, DIR 21, FG 16
+#define BL_PWM 17
+#define BL_DIR 21
+#define BL_FG  16
+
+// ============================
+// PWM config
+// ============================
+#define FL_CH 0
+#define FR_CH 1
+#define BR_CH 2
+#define BL_CH 3
+
+#define PWM_FREQ 20000
+#define PWM_RES  8
+
+const int DRIVE_SPEED = 160;   // 0..255
+
+// Flip any motor by changing +1 to -1
+const int FL_SIGN = +1;
+const int FR_SIGN = +1;
+const int BR_SIGN = +1;
+const int BL_SIGN = +1;
+
+// comms failsafe
+unsigned long lastCmdMs = 0;
+const unsigned long COMMAND_TIMEOUT_MS = 500;
+
+enum MotionState
+{
+  MOTION_STOP = 0,
+  MOTION_FORWARD
+};
+
+MotionState currentMotion = MOTION_STOP;
+
+// ============================
+// Motor helpers
+// ============================
+void setupMotor(int pwmPin, int dirPin, int fgPin, int channel)
+{
+  pinMode(dirPin, OUTPUT);
+  pinMode(fgPin, INPUT_PULLUP);
+
+  ledcSetup(channel, PWM_FREQ, PWM_RES);
+  ledcAttachPin(pwmPin, channel);
+
+  digitalWrite(dirPin, LOW);
+  ledcWrite(channel, 0);
+}
+
+void setMotorSigned(int dirPin, int channel, int signedSpeed)
+{
+  signedSpeed = constrain(signedSpeed, -255, 255);
+
+  if (signedSpeed > 0)
+  {
+    digitalWrite(dirPin, HIGH);
+    ledcWrite(channel, signedSpeed);
+  }
+  else if (signedSpeed < 0)
+  {
+    digitalWrite(dirPin, LOW);
+    ledcWrite(channel, -signedSpeed);
+  }
+  else
+  {
+    ledcWrite(channel, 0);
+  }
+}
+
+void robotStop()
+{
+  setMotorSigned(FL_DIR, FL_CH, 0);
+  setMotorSigned(FR_DIR, FR_CH, 0);
+  setMotorSigned(BR_DIR, BR_CH, 0);
+  setMotorSigned(BL_DIR, BL_CH, 0);
+}
+
+void robotForward(int speedValue)
+{
+  setMotorSigned(FL_DIR, FL_CH, FL_SIGN * speedValue);
+  setMotorSigned(FR_DIR, FR_CH, FR_SIGN * speedValue);
+  setMotorSigned(BR_DIR, BR_CH, BR_SIGN * speedValue);
+  setMotorSigned(BL_DIR, BL_CH, BL_SIGN * speedValue);
+}
+
+// ============================
+// Command handling
+// ============================
+void handleCommand(String cmd)
+{
+  cmd.trim();
+
+  if (cmd == "FWD")
+  {
+    currentMotion = MOTION_FORWARD;
+    lastCmdMs = millis();
+    Serial.println("CMD: FWD");
+  }
+  else if (cmd == "STOP")
+  {
+    currentMotion = MOTION_STOP;
+    lastCmdMs = millis();
+    Serial.println("CMD: STOP");
+  }
+}
+
+// ============================
+// Setup
+// ============================
+void setup()
+{
+  Serial.begin(115200);
+  LinkSerial.begin(115200, SERIAL_8N1, LINK_RX, LINK_TX);
+
+  setupMotor(FL_PWM, FL_DIR, FL_FG, FL_CH);
+  setupMotor(FR_PWM, FR_DIR, FR_FG, FR_CH);
+  setupMotor(BR_PWM, BR_DIR, BR_FG, BR_CH);
+  setupMotor(BL_PWM, BL_DIR, BL_FG, BL_CH);
+
+  robotStop();
+  lastCmdMs = millis();
+
+  Serial.println("SLAVE ready");
+}
+
+// ============================
+// Loop
+// ============================
+void loop()
+{
+  while (LinkSerial.available())
+  {
+    String cmd = LinkSerial.readStringUntil('\n');
+    handleCommand(cmd);
+  }
+
+  // failsafe: if comms stop, stop motors
+  if (millis() - lastCmdMs > COMMAND_TIMEOUT_MS)
+  {
+    currentMotion = MOTION_STOP;
+  }
+
+  switch (currentMotion)
+  {
+    case MOTION_FORWARD:
+      robotForward(DRIVE_SPEED);
+      break;
+
+    case MOTION_STOP:
+    default:
+      robotStop();
+      break;
+  }
+
+  delay(10);
+}

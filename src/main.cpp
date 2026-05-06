@@ -1,220 +1,27 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-// -------------------------
-// Pin setup - change if needed
-// -------------------------
-#define TRIG_LEFT   1
-#define ECHO_LEFT   2
-#define TRIG_RIGHT  3
-#define ECHO_RIGHT  10
-
 TFT_eSPI tft = TFT_eSPI();
 
-// -------------------------
-// Tuning
-// -------------------------
-const float SOUND_SPEED_MM_PER_US = 0.343f;   // mm/us
-const unsigned long ECHO_TIMEOUT_US = 25000;  // ~4.3 m max
-const int VALID_MIN_MM = 30;                  // ignore junk too close
-const int VALID_MAX_MM = 2500;                // practical working cap
-const int CENTER_TOL_MM = 20;                 // tune this later
+void setup() {
 
-// -------------------------
-// Median helper for 3 values
-// -------------------------
-unsigned long median3(unsigned long a, unsigned long b, unsigned long c)
-{
-  if (a > b) { unsigned long t = a; a = b; b = t; }
-  if (b > c) { unsigned long t = b; b = c; c = t; }
-  if (a > b) { unsigned long t = a; a = b; b = t; }
-  return b;
-}
+  pinMode(15, OUTPUT); // as per your earlier request
+  digitalWrite(15, HIGH);
+  
+  // Turn on backlight
+  pinMode(38, OUTPUT);
+  digitalWrite(38, HIGH);
 
-// -------------------------
-// Read one ultrasonic in mm
-// Returns -1 if invalid / timeout
-// pulseIn reads pulse length in microseconds
-// -------------------------
-int readUltrasonicMM(int trigPin, int echoPin)
-{
-  // clear trigger
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-
-  // 10 us trigger pulse
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-
-  unsigned long duration = pulseIn(echoPin, HIGH, ECHO_TIMEOUT_US);
-
-  if (duration == 0)
-  {
-    return -1;
-  }
-
-  // Distance = (time * speed of sound) / 2
-  float distance_mm = (duration * SOUND_SPEED_MM_PER_US) / 2.0f;
-  int mm = (int)distance_mm;
-
-  if (mm < VALID_MIN_MM || mm > VALID_MAX_MM)
-  {
-    return -1;
-  }
-
-  return mm;
-}
-
-// -------------------------
-// Filtered read using 3 samples
-// -------------------------
-int readFilteredMM(int trigPin, int echoPin)
-{
-  int a = readUltrasonicMM(trigPin, echoPin);
-  delay(25);
-  int b = readUltrasonicMM(trigPin, echoPin);
-  delay(25);
-  int c = readUltrasonicMM(trigPin, echoPin);
-
-  // handle invalid combinations
-  int validCount = 0;
-  if (a != -1) validCount++;
-  if (b != -1) validCount++;
-  if (c != -1) validCount++;
-
-  if (validCount == 0) return -1;
-  if (validCount == 1)
-  {
-    if (a != -1) return a;
-    if (b != -1) return b;
-    return c;
-  }
-  if (validCount == 2)
-  {
-    if (a == -1) return (b + c) / 2;
-    if (b == -1) return (a + c) / 2;
-    return (a + b) / 2;
-  }
-
-  return (int)median3((unsigned long)a, (unsigned long)b, (unsigned long)c);
-}
-
-// -------------------------
-// LCD display
-// -------------------------
-void showStatus(int leftMM, int rightMM, const char* state, int errorMM)
-{
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
-
-  tft.setCursor(10, 10);
-  tft.println("2 Ultrasonic Test");
-
-  tft.setCursor(10, 45);
-  tft.print("Left:  ");
-  if (leftMM < 0) tft.println("----");
-  else            tft.printf("%d mm\n", leftMM);
-
-  tft.setCursor(10, 75);
-  tft.print("Right: ");
-  if (rightMM < 0) tft.println("----");
-  else             tft.printf("%d mm\n", rightMM);
-
-  tft.setCursor(10, 105);
-  tft.print("Error: ");
-  tft.printf("%d mm\n", errorMM);
-
-  tft.setCursor(10, 140);
-  tft.print("State: ");
-  tft.println(state);
-}
-
-// -------------------------
-// Setup
-// -------------------------
-void setup()
-{
-  Serial.begin(115200);
-  delay(500);
-
-  pinMode(TRIG_LEFT, OUTPUT);
-  pinMode(ECHO_LEFT, INPUT);
-  pinMode(TRIG_RIGHT, OUTPUT);
-  pinMode(ECHO_RIGHT, INPUT);
-
-  digitalWrite(TRIG_LEFT, LOW);
-  digitalWrite(TRIG_RIGHT, LOW);
-
+  // Start display
   tft.init();
   tft.setRotation(1);
   tft.fillScreen(TFT_BLACK);
 
-  // If your board needs TFT backlight enable, uncomment:
-  // pinMode(15, OUTPUT);
-  // digitalWrite(15, HIGH);
-
+  // Print "hi" in the middle
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextSize(2);
-  tft.setCursor(10, 10);
-  tft.println("Ultrasonic ready");
-
-  Serial.println("2x HC-SR04 alignment test ready");
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("hi", tft.width() / 2, tft.height() / 2, 4);
 }
 
-// -------------------------
-// Loop
-// -------------------------
-void loop()
-{
-  // Read sensors sequentially to reduce cross-talk
-  int leftMM = readFilteredMM(TRIG_LEFT, ECHO_LEFT);
-  delay(30);
-  int rightMM = readFilteredMM(TRIG_RIGHT, ECHO_RIGHT);
-
-  const char* state = "NO TARGET";
-  int errorMM = 0;
-
-  if (leftMM >= 0 && rightMM >= 0)
-  {
-    errorMM = leftMM - rightMM;
-
-    if (abs(errorMM) <= CENTER_TOL_MM)
-    {
-      state = "CENTERED";
-    }
-    else if (errorMM < 0)
-    {
-      // left is farther than right? no:
-      // error = left - right
-      // if negative, left < right => left side closer
-      state = "MOVE RIGHT";
-    }
-    else
-    {
-      state = "MOVE LEFT";
-    }
-  }
-  else if (leftMM >= 0)
-  {
-    state = "TARGET LEFT";
-  }
-  else if (rightMM >= 0)
-  {
-    state = "TARGET RIGHT";
-  }
-
-  Serial.print("L=");
-  Serial.print(leftMM);
-  Serial.print(" mm, R=");
-  Serial.print(rightMM);
-  Serial.print(" mm, err=");
-  Serial.print(errorMM);
-  Serial.print(" -> ");
-  Serial.println(state);
-
-  showStatus(leftMM, rightMM, state, errorMM);
-
-  delay(100);
+void loop() {
 }

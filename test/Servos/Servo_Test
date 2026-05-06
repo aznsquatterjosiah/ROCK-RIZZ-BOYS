@@ -4,8 +4,8 @@
 Servo wallLeftServo;
 Servo wallRightServo;
 
-static const int WALL_LEFT_PIN  = 17;
-static const int WALL_RIGHT_PIN = 12;
+static const int WALL_LEFT_PIN  = 10;
+static const int WALL_RIGHT_PIN = 11;
 
 void setup() {
   Serial.begin(115200); 

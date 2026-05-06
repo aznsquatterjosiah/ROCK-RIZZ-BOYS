@@ -1,0 +1,566 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+#include <TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+
+Servo wallLeftServo;
+Servo wallRightServo;
+Servo scoopServo;
+
+static const int WALL_LEFT_PIN  = 16;
+static const int WALL_RIGHT_PIN = 21;
+static const int SCOOP_PIN      = 17;
+
+// =====================================================
+// MAIN TRIGGER ULTRASONIC (starts full sequence)
+// =====================================================
+#define US_TRIG 10
+#define US_ECHO 11
+
+// =====================================================
+// HOPPER ALIGNMENT ULTRASONIC
+// NOTE: cannot use 1 and 2 because rack already uses them
+// =====================================================
+#define HOPPER_TRIG_PIN 12
+#define HOPPER_ECHO_PIN 13
+
+// =====================================================
+// LINEAR ACTUATOR
+// =====================================================
+static const int ACTUATOR_IN1 = 44;
+static const int ACTUATOR_IN2 = 18;
+
+// =====================================================
+// EXTENDER RACK MOTOR DRIVER
+// =====================================================
+static const int RACK_ENA = 1;   // PWM
+static const int RACK_IN1 = 2;   // Direction 1
+static const int RACK_IN2 = 3;   // Direction 2
+
+static const int RACK_PWM_CHANNEL = 0;
+static const int RACK_PWM_FREQ    = 1000;
+static const int RACK_PWM_RES     = 8;
+static const int RACK_FULL_SPEED  = 255;
+
+// =====================================================
+// GENERAL SETTINGS
+// =====================================================
+const float TRIGGER_DISTANCE_CM = 5.0;
+const unsigned long TIMEOUT_US  = 30000;
+bool hasRunSequence = false;
+
+// =====================================================
+// HOPPER ALIGNMENT SETTINGS
+// =====================================================
+const float SOUND_SPEED_MM_PER_US = 0.343f;
+const unsigned long HOPPER_ECHO_TIMEOUT_US = 25000;
+const int VALID_MIN_MM = 40;
+const int VALID_MAX_MM = 2000;
+
+const int DETECT_MAX_MM = 1000;
+const int MIN_TOL_MM = 10;
+const int EXIT_RISE_MM = 25;
+const int REQUIRED_RISE_COUNT = 3;
+
+// =====================================================
+// HOPPER ALIGNMENT STATES
+// =====================================================
+enum AlignState
+{
+  IDLE,
+  SCANNING,
+  PASSED_MIN,
+  CENTERED
+};
+
+AlignState hopperState = IDLE;
+int hopperCurrentDistanceMM = -1;
+int hopperMinDistanceMM = 99999;
+bool hopperTargetSeen = false;
+int hopperRiseCount = 0;
+
+// =====================================================
+// HELPERS
+// =====================================================
+const char* stateName(AlignState s)
+{
+  switch (s)
+  {
+    case IDLE:       return "IDLE";
+    case SCANNING:   return "SCANNING";
+    case PASSED_MIN: return "PASSED MIN";
+    case CENTERED:   return "CENTERED";
+    default:         return "UNKNOWN";
+  }
+}
+
+void showMessage(const char* line1, const char* line2 = "")
+{
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(20, 40);
+  tft.println(line1);
+
+  if (line2[0] != '\0')
+  {
+    tft.setCursor(20, 80);
+    tft.println(line2);
+  }
+}
+
+void showHopperStatus()
+{
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  tft.setCursor(10, 10);
+  tft.println("Hopper Align");
+
+  tft.setCursor(10, 40);
+  tft.print("State: ");
+  tft.println(stateName(hopperState));
+
+  tft.setCursor(10, 70);
+  tft.print("Current: ");
+  if (hopperCurrentDistanceMM < 0) tft.println("----");
+  else tft.printf("%d mm\n", hopperCurrentDistanceMM);
+
+  tft.setCursor(10, 100);
+  tft.print("Min: ");
+  if (hopperMinDistanceMM == 99999) tft.println("----");
+  else tft.printf("%d mm\n", hopperMinDistanceMM);
+
+  tft.setCursor(10, 130);
+  tft.print("Seen: ");
+  tft.println(hopperTargetSeen ? "YES" : "NO");
+
+  tft.setCursor(10, 160);
+  tft.print("RiseCnt: ");
+  tft.println(hopperRiseCount);
+
+  tft.setCursor(10, 190);
+  if (hopperState == SCANNING)      tft.println("Move across hopper");
+  else if (hopperState == PASSED_MIN) tft.println("Move back to min");
+  else if (hopperState == CENTERED) tft.println("Rack can extend");
+  else                              tft.println("Waiting...");
+}
+
+// =====================================================
+// MAIN TRIGGER ULTRASONIC
+// =====================================================
+float readUltrasonicCM()
+{
+  digitalWrite(US_TRIG, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(US_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(US_TRIG, LOW);
+
+  unsigned long duration = pulseIn(US_ECHO, HIGH, TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1.0;
+  }
+
+  float distance = duration * 0.0343f / 2.0f;
+  return distance;
+}
+
+// =====================================================
+// HOPPER ULTRASONIC
+// =====================================================
+bool isValidTarget(int mm)
+{
+  return (mm >= VALID_MIN_MM && mm <= DETECT_MAX_MM);
+}
+
+int readHopperUltrasonicMM()
+{
+  digitalWrite(HOPPER_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(HOPPER_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(HOPPER_TRIG_PIN, LOW);
+
+  unsigned long duration = pulseIn(HOPPER_ECHO_PIN, HIGH, HOPPER_ECHO_TIMEOUT_US);
+
+  if (duration == 0)
+  {
+    return -1;
+  }
+
+  float distanceMM = (duration * SOUND_SPEED_MM_PER_US) / 2.0f;
+  int mm = (int)distanceMM;
+
+  if (mm < VALID_MIN_MM || mm > VALID_MAX_MM)
+  {
+    return -1;
+  }
+
+  return mm;
+}
+
+int median3(int a, int b, int c)
+{
+  if (a > b) { int t = a; a = b; b = t; }
+  if (b > c) { int t = b; b = c; c = t; }
+  if (a > b) { int t = a; a = b; b = t; }
+  return b;
+}
+
+int readFilteredHopperMM()
+{
+  int a = readHopperUltrasonicMM();
+  delay(20);
+  int b = readHopperUltrasonicMM();
+  delay(20);
+  int c = readHopperUltrasonicMM();
+
+  int valid[3];
+  int count = 0;
+
+  if (a >= 0) valid[count++] = a;
+  if (b >= 0) valid[count++] = b;
+  if (c >= 0) valid[count++] = c;
+
+  if (count == 0) return -1;
+  if (count == 1) return valid[0];
+  if (count == 2) return (valid[0] + valid[1]) / 2;
+
+  return median3(valid[0], valid[1], valid[2]);
+}
+
+void resetHopperScan()
+{
+  hopperState = IDLE;
+  hopperCurrentDistanceMM = -1;
+  hopperMinDistanceMM = 99999;
+  hopperTargetSeen = false;
+  hopperRiseCount = 0;
+}
+
+void startHopperScan()
+{
+  hopperState = SCANNING;
+  hopperCurrentDistanceMM = -1;
+  hopperMinDistanceMM = 99999;
+  hopperTargetSeen = false;
+  hopperRiseCount = 0;
+
+  Serial.println("Hopper scan started");
+}
+
+void updateHopperAlignment()
+{
+  hopperCurrentDistanceMM = readFilteredHopperMM();
+
+  switch (hopperState)
+  {
+    case IDLE:
+      break;
+
+    case SCANNING:
+    {
+      if (isValidTarget(hopperCurrentDistanceMM))
+      {
+        hopperTargetSeen = true;
+
+        if (hopperCurrentDistanceMM < hopperMinDistanceMM)
+        {
+          hopperMinDistanceMM = hopperCurrentDistanceMM;
+          hopperRiseCount = 0;
+
+          Serial.print("New hopper min: ");
+          Serial.print(hopperMinDistanceMM);
+          Serial.println(" mm");
+        }
+        else
+        {
+          if (hopperMinDistanceMM != 99999 &&
+              hopperCurrentDistanceMM > (hopperMinDistanceMM + EXIT_RISE_MM))
+          {
+            hopperRiseCount++;
+
+            if (hopperRiseCount >= REQUIRED_RISE_COUNT)
+            {
+              hopperState = PASSED_MIN;
+              Serial.println("Passed hopper minimum");
+            }
+          }
+          else
+          {
+            hopperRiseCount = 0;
+          }
+        }
+      }
+      break;
+    }
+
+    case PASSED_MIN:
+    {
+      if (isValidTarget(hopperCurrentDistanceMM) && hopperMinDistanceMM != 99999)
+      {
+        int errorMM = abs(hopperCurrentDistanceMM - hopperMinDistanceMM);
+
+        if (errorMM <= MIN_TOL_MM)
+        {
+          hopperState = CENTERED;
+          Serial.println("Centered on hopper minimum distance");
+        }
+      }
+      break;
+    }
+
+    case CENTERED:
+      break;
+  }
+
+  Serial.print("Hopper State=");
+  Serial.print(stateName(hopperState));
+  Serial.print(" | Current=");
+  Serial.print(hopperCurrentDistanceMM);
+  Serial.print(" mm | Min=");
+  if (hopperMinDistanceMM == 99999) Serial.print("----");
+  else Serial.print(hopperMinDistanceMM);
+  Serial.print(" | Seen=");
+  Serial.print(hopperTargetSeen ? "YES" : "NO");
+  Serial.print(" | RiseCnt=");
+  Serial.println(hopperRiseCount);
+
+  showHopperStatus();
+}
+
+void waitUntilHopperCentered()
+{
+  startHopperScan();
+
+  while (hopperState != CENTERED)
+  {
+    updateHopperAlignment();
+    delay(80);
+  }
+
+  showMessage("Hopper Aligned", "Rack Extending");
+}
+
+// =====================================================
+// SCOOP
+// =====================================================
+void moveScoop(int angle, int waitMs)
+{
+  scoopServo.attach(SCOOP_PIN, 500, 2400);
+  scoopServo.write(angle);
+  delay(waitMs);
+  scoopServo.detach();
+}
+
+// =====================================================
+// LINEAR ACTUATOR
+// =====================================================
+void stopActuator()
+{
+  digitalWrite(ACTUATOR_IN1, LOW);
+  digitalWrite(ACTUATOR_IN2, LOW);
+}
+
+void actuatorUp()
+{
+  digitalWrite(ACTUATOR_IN1, HIGH);
+  digitalWrite(ACTUATOR_IN2, LOW);
+}
+
+void actuatorRetract()
+{
+  digitalWrite(ACTUATOR_IN1, LOW);
+  digitalWrite(ACTUATOR_IN2, HIGH);
+}
+
+void moveActuatorUpFor(unsigned long timeMs)
+{
+  actuatorUp();
+  delay(timeMs);
+  stopActuator();
+}
+
+void moveActuatorRetractFor(unsigned long timeMs)
+{
+  actuatorRetract();
+  delay(timeMs);
+  stopActuator();
+}
+
+// =====================================================
+// RACK
+// =====================================================
+void stopRack()
+{
+  ledcWrite(RACK_PWM_CHANNEL, 0);
+  digitalWrite(RACK_IN1, LOW);
+  digitalWrite(RACK_IN2, LOW);
+}
+
+void rackForward()
+{
+  digitalWrite(RACK_IN1, HIGH);
+  digitalWrite(RACK_IN2, LOW);
+  ledcWrite(RACK_PWM_CHANNEL, RACK_FULL_SPEED);
+}
+
+void rackReverse()
+{
+  digitalWrite(RACK_IN1, LOW);
+  digitalWrite(RACK_IN2, HIGH);
+  ledcWrite(RACK_PWM_CHANNEL, RACK_FULL_SPEED);
+}
+
+void runRackSequence()
+{
+  showMessage("Rack Forward", "2800 ms");
+  rackForward();
+  delay(2800);
+
+  showMessage("Rack Stop", "1200 ms");
+  stopRack();
+  delay(1200);
+
+  showMessage("Rack Reverse", "2800 ms");
+  rackReverse();
+  delay(2800);
+
+  showMessage("Rack Stop", "1000 ms");
+  stopRack();
+  delay(1000);
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+void setup()
+{
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
+
+  pinMode(US_TRIG, OUTPUT);
+  pinMode(US_ECHO, INPUT);
+
+  pinMode(HOPPER_TRIG_PIN, OUTPUT);
+  pinMode(HOPPER_ECHO_PIN, INPUT);
+  digitalWrite(HOPPER_TRIG_PIN, LOW);
+
+  pinMode(ACTUATOR_IN1, OUTPUT);
+  pinMode(ACTUATOR_IN2, OUTPUT);
+  stopActuator();
+
+  pinMode(RACK_IN1, OUTPUT);
+  pinMode(RACK_IN2, OUTPUT);
+
+  Serial.begin(115200);
+
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+
+  showMessage("Wall + Scoop", "LilyGO T-S3");
+
+  wallLeftServo.setPeriodHertz(50);
+  wallRightServo.setPeriodHertz(50);
+  scoopServo.setPeriodHertz(50);
+
+  wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
+  wallRightServo.attach(WALL_RIGHT_PIN, 500, 2400);
+
+  ledcSetup(RACK_PWM_CHANNEL, RACK_PWM_FREQ, RACK_PWM_RES);
+  ledcAttachPin(RACK_ENA, RACK_PWM_CHANNEL);
+  stopRack();
+
+  // Starting wall position
+  wallLeftServo.write(0);
+  wallRightServo.write(90);
+
+  // Starting scoop position
+  moveScoop(0, 1000);
+
+  resetHopperScan();
+
+  delay(20000)
+  
+  // Startup actuator move
+  showMessage("Actuator Up", "3 sec");
+  moveActuatorUpFor(3000);
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+void loop()
+{
+  if (hasRunSequence)
+  {
+    showMessage("Sequence Done");
+    delay(200);
+    return;
+  }
+
+  float distanceCM = readUltrasonicCM();
+
+  Serial.print("Front Distance: ");
+  Serial.println(distanceCM);
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(20, 20);
+  tft.println("Wall Control");
+  tft.setCursor(20, 60);
+  tft.print("Dist: ");
+  tft.print(distanceCM);
+  tft.println(" cm");
+
+  if (distanceCM > 0 && distanceCM < TRIGGER_DISTANCE_CM)
+  {
+    Serial.println("Object detected under 5 cm");
+    Serial.println("Running full sequence once");
+
+    // Wall Extend
+    showMessage("Wall Extend");
+    wallLeftServo.write(90);
+    wallRightServo.write(0);
+    delay(2000);
+
+    // Wall Retract
+    showMessage("Wall Retract");
+    wallLeftServo.write(0);
+    wallRightServo.write(90);
+    delay(2000);
+
+    // Scoop to 0
+    showMessage("Scoop 0");
+    moveScoop(0, 2000);
+
+    // Scoop to 145
+    showMessage("Scoop 145");
+    moveScoop(145, 2000);
+
+    // Actuator up
+    showMessage("Actuator Up", "10 sec");
+    moveActuatorUpFor(10000);
+
+    // Wait until hopper alignment says centered
+    waitUntilHopperCentered();
+
+    // Only now extend rack
+    runRackSequence();
+
+    // Retract actuator at the end
+    showMessage("Actuator Retract", "End");
+    moveActuatorRetractFor(150000);
+
+    hasRunSequence = true;
+  }
+
+  delay(100);
+}

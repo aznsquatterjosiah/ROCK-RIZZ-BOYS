@@ -1,8 +1,8 @@
 #include <Arduino.h>
 
 // L298N direction pins
-const int IN1 = 16;
-const int IN2 = 17;
+const int IN1 = 44;
+const int IN2 = 18;
 
 void stopActuator() {
   digitalWrite(IN1, LOW);

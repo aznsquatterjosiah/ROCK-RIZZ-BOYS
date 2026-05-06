@@ -2,7 +2,7 @@
 #include <ESP32Servo.h>
 
 // ====== CHANGE THESE PINS ======
-const int SERVO_PINS[] = {1,2};   // replace with your actual servo signal pins
+const int SERVO_PINS[] = {21};   // replace with your actual servo signal pins
 const int SERVO_COUNT = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
 
 Servo servos[SERVO_COUNT];
