@@ -72,9 +72,10 @@
     wallRightServo.setPeriodHertz(50);
     FlapServo.setPeriodHertz(50);
 
-    wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
-    wallRightServo.attach(WALL_RIGHT_PIN, 500, 2400);
-    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    
+    FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    FlapServo.attach(wallLeftServo, 500, 2400);
+    FlapServo.attach(wallRightServo, 500, 2400);
 
     pinMode(ENA, OUTPUT);
     pinMode(IN1, OUTPUT);
@@ -94,16 +95,19 @@
     
     // stage 0, flip scoop flap
 
-    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);  // attach seperately 
+    FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);  // attach seperately 
 
-  // FlapServo.write(0);      // facing down, starting state
-    // delay(3000);
+    FlapServo.write(90);      // facing down, starting state
+    delay(3000);
+
+    FlapServo.write(0);      // facing down, starting state
+    delay(3000);
 
 
     // Stage 1 retract LA to level with wall
 
     retractActuator();
-    delay(600);
+    delay(800);
 
 
     stopActuator();
@@ -136,11 +140,8 @@
     // Stage 5 Scoop 90 deg
 
 
-    wallLeftServo.write(180);      // facing down, starting state
-    wallRightServo.write(0);
 
-
-    delay(4000);
+   
 
 
 
@@ -150,23 +151,40 @@
 
     
 
-    // Stage .. Extend Full way 
-    extendActuator();
-    delay(15000);
+    // // Stage .. Extend Full way 
+    // extendActuator();
+    // delay(15000);
 
     
 
 
-    // Stage .. Retract to start state 
-    retractActuator();
-    delay(9000);
+    // // Stage .. Retract to start state 
+    // retractActuator();
+    // delay(8500);
 
-    stopActuator();
-    delay(4000);
+    // stopActuator();
+    // delay(4000);
     
 
     
   }
 
   void loop() {
+
+    void loop() {
+  wallLeftServo.write(180);      // facing down, starting state
+  wallRightServo.write(0);
+  delay(2000);
+
+  wallLeftServo.write(80); // scoop facing forward
+  wallRightServo.write(100);
+  delay(2000);
+
+  wallLeftServo.write(40); // scoop facing forward
+  wallRightServo.write(140);
+  delay(2000);
+
+
+
+}
   }
