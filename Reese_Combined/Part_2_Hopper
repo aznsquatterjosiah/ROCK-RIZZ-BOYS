@@ -73,9 +73,7 @@
     FlapServo.setPeriodHertz(50);
 
     
-    FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
-    FlapServo.attach(wallLeftServo, 500, 2400);
-    FlapServo.attach(wallRightServo, 500, 2400);
+    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
 
     pinMode(ENA, OUTPUT);
     pinMode(IN1, OUTPUT);
@@ -91,36 +89,75 @@
   
     stopExtender();
 
-    // start sequence
+    // Hopper 
 
-   
+
+    
+    // Stage 1 Initial Position 
+
+
+    // FlapServo.attach(WALL_LEFT_PIN, 500, 2400);  // attach seperately 
+    // FlapServo.attach(WALL_RIGHT_PIN, 500, 2400);  // attach seperately 
+
+    // wallLeftServo.write(40); // scoop facing forward
+    // wallRightServo.write(140);
+    // delay(2000);
+
+
+
+    // Stage 2, Scissor Lift actuate fully 
+
+
+    extendActuator();
+    delay(15000);
+
+    stopActuator();
+    delay(2000);
+
+
+    // Stage 3 after alignment extend
+
     extenderBackward(EXT_SPEED);
-    delay(400);
+    delay(1100);
 
+    stopExtender();
+    delay(2000);
+
+
+
+    // Down 45 deg to prepare for drop
+
+
+    wallLeftServo.write(120);   // down 45 degrees from forward
+    wallRightServo.write(60);    
+    delay(2000);
+    
+
+
+
+    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);  // attach seperately 
+
+
+    // FLAP
+
+
+    wallLeftServo.write(0);      // facing down, starting state
+    delay(2000);
+
+
+
+    // return to starting for pickup
+    
     retractActuator();
-    delay(2200);
+    delay(8500);
 
-    extenderBackward(EXT_SPEED);
-    delay(1000);
-
-
-    
-    // // Stage .. Extend Full way 
-    // extendActuator();
-    // delay(15000);
-
-    
+    stopActuator();
+    delay(2000);
 
 
-    // // Stage .. Retract to start state 
-    // retractActuator();
-    // delay(8500);
 
-    // stopActuator();
-    // delay(4000);
-    
-
-    
   }
 
-  
+  void loop() {
+
+  }
