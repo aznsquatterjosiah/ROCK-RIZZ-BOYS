@@ -73,7 +73,9 @@
     FlapServo.setPeriodHertz(50);
 
     
-    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    FlapServo.attach(wallLeftServo, 500, 2400);
+    FlapServo.attach(wallRightServo, 500, 2400);
 
     pinMode(ENA, OUTPUT);
     pinMode(IN1, OUTPUT);
@@ -89,135 +91,36 @@
   
     stopExtender();
 
-    // Start Sequence
-    
-    // stage 0, flip scoop flap
+    // start sequence
 
-    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);  // attach seperately 
-
-    // FlapServo.write(0);      // facing down, starting state
-    // delay(3000);
-
-
-    // Stage 1 retract LA to level with wall
-
-    delay(4400);
-
+   
+    extenderBackward(EXT_SPEED);
+    delay(400);
 
     retractActuator();
-    delay(850);
-
-
-    stopActuator();
-    delay(1000);   // neutral wait, actuator not moving
-
-    // Stage 2 Extend Extender Rack   (backward is forward rn)  pushing rocks
-    extenderBackward(EXT_SPEED);
-    delay(1200);
-
-
-    stopExtender();
-    delay(4000);   // wait
-
-    // Stage 3 Retract Extender Rack   (move back)
-    extenderForward(EXT_SPEED);
-    delay(800);
-    
-    stopExtender();
-    delay(4000);  // wait 
-
-    
-
-    // stage 4   upsies
-    extendActuator();
-    delay(2000);
-    
-    stopActuator();
-    delay(4000);
-
-    // Stage 5 Scoop 90 deg
-
-    // FlapServo.attach(WALL_LEFT_PIN, 500, 2400);  // attach seperately 
-    // FlapServo.attach(WALL_RIGHT_PIN, 500, 2400);  // attach seperately 
-
-
-    // wallLeftServo.write(80); // scoop facing forward
-    // wallRightServo.write(100);
-    // delay(2000);
-
-
-    // stage 6   extend forward
+    delay(2200);
 
     extenderBackward(EXT_SPEED);
-    delay(500);
-
-    stopExtender();
-    delay(4000);  // wait 
+    delay(1000);
 
 
-
-    // stage 7 Retract LA
-
-    retractActuator();
-    delay(4400);
-
-
-    stopActuator();
-    delay(2000);   // neutral wait, actuator not moving
-
-
-  // stage 8 Extend Foward Max
-
-    extenderBackward(EXT_SPEED);
-    delay(1400);
-
-    stopExtender();
-    delay(4000);  // wait 
-
-
-  // stage 9, flip 90
-
-    // FlapServo.write(90);      // facing down, starting state
-    // delay(2000);
-
-  // Stage 10
-
-    extendActuator();
-    delay(4000);
     
-    stopActuator();
-    delay(4000);
+    // // Stage .. Extend Full way 
+    // extendActuator();
+    // delay(15000);
+
+    
 
 
+    // // Stage .. Retract to start state 
+    // retractActuator();
+    // delay(8500);
 
-    // Stage    11  45 deg
+    // stopActuator();
+    // delay(4000);
+    
 
-    // wallLeftServo.write(40); // scoop facing forward
-    // wallRightServo.write(140);
-    // delay(2000);
-
+    
+  }
 
   
-    // Stage 12 Extend Full way 
-    extendActuator();
-    delay(10000);
-
-    stopActuator();
-    delay(2000);
-
-    
-
-
-    // Stage 13 Retract to start state 
-    retractActuator();
-    delay(8500);
-
-    stopActuator();
-    delay(2000);
-    
-
-    
-  }
-
-  void loop() {
-  }

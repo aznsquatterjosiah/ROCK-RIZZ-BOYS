@@ -22,17 +22,12 @@ void setup() {
 }
 
 void loop() {
-  wallLeftServo.write(180);      // facing down, starting state
-  wallRightServo.write(0);
-  delay(2000);
-
+ 
   wallLeftServo.write(80); // scoop facing forward
   wallRightServo.write(100);
   delay(2000);
 
-  wallLeftServo.write(40); // scoop facing forward
-  wallRightServo.write(140);
-  delay(2000);
+  
 
 
 

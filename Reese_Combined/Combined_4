@@ -1,0 +1,31 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+Servo wallLeftServo;
+
+
+static const int WALL_LEFT_PIN  = 12; //flap
+
+
+void setup() {
+
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
+  
+  Serial.begin(115200); 
+
+  wallLeftServo.setPeriodHertz(50);
+ 
+
+  wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
+  
+}
+
+void loop() {
+  wallLeftServo.write(90);      // facing down, starting state
+  delay(2000);
+
+  wallLeftServo.write(0);      // facing down, starting state
+  delay(2000);
+
+}

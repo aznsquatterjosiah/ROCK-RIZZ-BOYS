@@ -2,256 +2,38 @@
 #include <ESP32Servo.h>
 
 Servo wallLeftServo;
-Servo wallRightServo;   // FROM THE REAR
-Servo FlapServo;
+Servo wallRightServo; // FROM THE REAR
 
-// ===========================
-// L298N pins (linear actuator)
-// ===========================
-const int ENA = 1;
-const int IN1 = 2;
-const int IN2 = 3;
-
-// ===========================
-// Extender pins
-// ===========================
-const int EXT_EN  = 4;    // Enable / PWM
-const int EXT_IN1 = 43;   // Direction 1
-const int EXT_IN2 = 44;   // Direction 2
-
-// PWM settings
-const int PWM_CH   = 0;
-const int PWM_FREQ = 20000;
-const int PWM_RES  = 8;   // 0-255
-
-// ===========================
-// Servo pins
-// ===========================
-static const int WALL_LEFT_PIN  = 10; // yellow
-static const int WALL_RIGHT_PIN = 11; // green
-static const int FLAP_SERVO_PIN = 12; // flap / scoop
-
-// Speed (0 = off, 255 = full speed)
-const int EXT_SPEED = 150;
-
-// ===========================
-// Track servo positions
-// ===========================
-int wallLeftPos  = 90;
-int wallRightPos = 90;
-int flapPos      = 90;
-
-// ===========================
-// Extender functions
-// ===========================
-void stopExtender() {
-  digitalWrite(EXT_IN1, LOW);
-  digitalWrite(EXT_IN2, LOW);
-  ledcWrite(PWM_CH, 0);
-  Serial.println("Extender stopped");
-}
-
-void extenderForward(int speedVal) {
-  digitalWrite(EXT_IN1, HIGH);
-  digitalWrite(EXT_IN2, LOW);
-  ledcWrite(PWM_CH, speedVal);
-  Serial.println("Extender forward");
-}
-
-void extenderBackward(int speedVal) {
-  digitalWrite(EXT_IN1, LOW);
-  digitalWrite(EXT_IN2, HIGH);
-  ledcWrite(PWM_CH, speedVal);
-  Serial.println("Extender backward");
-}
-
-// ===========================
-// Linear actuator functions
-// ===========================
-void stopActuator() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-}
-
-void extendActuator() {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-}
-
-void retractActuator() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-}
-
-// ===========================
-// Servo helpers
-// ===========================
-bool attachServoWithReport(Servo &s, int pin, const char *name) {
-  int ch = s.attach(pin, 500, 2400);
-
-  Serial.print(name);
-  Serial.print(" attach channel = ");
-  Serial.println(ch);
-
-  if (ch == 0) {
-    Serial.print(name);
-    Serial.println(" attach FAILED");
-    return false;
-  }
-
-  Serial.print(name);
-  Serial.println(" attach OK");
-  return true;
-}
-
-void moveFlapSoftly(int target, int stepDelayMs) {
-  while (flapPos != target) {
-    if (flapPos < target) flapPos++;
-    else if (flapPos > target) flapPos--;
-
-    FlapServo.write(flapPos);
-    delay(stepDelayMs);
-  }
-}
-
-void moveWallsSoftly(int leftTarget, int rightTarget, int stepDelayMs) {
-  while (wallLeftPos != leftTarget || wallRightPos != rightTarget) {
-    if (wallLeftPos < leftTarget) wallLeftPos++;
-    else if (wallLeftPos > leftTarget) wallLeftPos--;
-
-    if (wallRightPos < rightTarget) wallRightPos++;
-    else if (wallRightPos > rightTarget) wallRightPos--;
-
-    wallLeftServo.write(wallLeftPos);
-    wallRightServo.write(wallRightPos);
-
-    delay(stepDelayMs);
-  }
-}
+static const int WALL_LEFT_PIN  = 10; //yellow
+static const int WALL_RIGHT_PIN = 11; //green
 
 void setup() {
+
   pinMode(15, OUTPUT);
   digitalWrite(15, HIGH);
-
-  Serial.begin(115200);
-  delay(500);
+  
+  Serial.begin(115200); 
 
   wallLeftServo.setPeriodHertz(50);
   wallRightServo.setPeriodHertz(50);
-  FlapServo.setPeriodHertz(50);
 
-  pinMode(ENA, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  digitalWrite(ENA, HIGH);
-
-  pinMode(EXT_IN1, OUTPUT);
-  pinMode(EXT_IN2, OUTPUT);
-
-  ledcSetup(PWM_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(EXT_EN, PWM_CH);
-
-  stopActuator();
-  stopExtender();
-
-  // =====================================
-  // Stage 0: flap / scoop sequence
-  // Follow standalone test:
-  // 90 -> wait -> 0 -> wait
-  // =====================================
-  attachServoWithReport(FlapServo, FLAP_SERVO_PIN, "FlapServo");
-  delay(300);
-
-  flapPos = 90;
-  FlapServo.write(flapPos);
-  delay(2000);
-
-  moveFlapSoftly(0, 15);
-  delay(2000);
-
-  // detach flap to reduce current before wall servos
-  FlapServo.detach();
-  Serial.println("FlapServo detached");
-  delay(500);
-
-  // =====================================
-  // Stage 1: retract LA to level with wall
-  // =====================================
-  retractActuator();
-  delay(800);
-
-  stopActuator();
-  delay(2000);
-
-  // =====================================
-  // Stage 2: extend extender rack
-  // =====================================
-  extenderBackward(EXT_SPEED);
-  delay(1200);
-
-  stopExtender();
-  delay(4000);
-
-  // =====================================
-  // Stage 3: retract extender rack
-  // =====================================
-  extenderForward(EXT_SPEED);
-  delay(800);
-
-  stopExtender();
-  delay(4000);
-
-  // =====================================
-  // Stage 4: actuator up
-  // =====================================
-  extendActuator();
-  delay(2000);
-
-  stopActuator();
-  delay(4000);
-
-  // =====================================
-  // Stage 5: wall servos
-  // Go to 180 / 0 and HOLD there
-  // =====================================
-  attachServoWithReport(wallLeftServo, WALL_LEFT_PIN, "wallLeftServo");
-  delay(400);
-
-  attachServoWithReport(wallRightServo, WALL_RIGHT_PIN, "wallRightServo");
-  delay(400);
-
-  // gentle starting point
-  wallLeftPos = 90;
-  wallRightPos = 90;
-  wallLeftServo.write(wallLeftPos);
-  wallRightServo.write(wallRightPos);
-  delay(1000);
-
-  // move softly to final hold position
-  moveWallsSoftly(180, 0, 15);
-  delay(2000);
-
-  // DO NOT detach
-  // DO NOT write new wall positions
-  // They will keep holding 180 / 0
-
-  // =====================================
-  // Stage 6: extend full way
-  // Walls remain holding 180 / 0
-  // =====================================
-  extendActuator();
-  delay(15000);
-
-  // =====================================
-  // Stage 7: retract to start state
-  // Walls still remain holding 180 / 0
-  // =====================================
-  retractActuator();
-  delay(8500);
-
-  stopActuator();
-  delay(4000);
+  wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
+  wallRightServo.attach(WALL_RIGHT_PIN, 500, 2400);
 }
 
 void loop() {
+  wallLeftServo.write(180);      // facing down, starting state
+  wallRightServo.write(0);
+  delay(2000);
+
+  wallLeftServo.write(80); // scoop facing forward
+  wallRightServo.write(100);
+  delay(2000);
+
+  wallLeftServo.write(40); // scoop facing forward
+  wallRightServo.write(140);
+  delay(2000);
+
+
+
 }
