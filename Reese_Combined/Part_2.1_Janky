@@ -5,7 +5,7 @@ Servo wallLeftServo;
 Servo wallRightServo;
 Servo FlapServo;
 
-// ===================== PIN DEFINITIONS =====================
+// Pins
 
 // L298N pins for scissor actuator
 const int ENA = 1;
@@ -25,17 +25,17 @@ static const int FLAP_SERVO_PIN  = 12;
 // Status / power pin
 const int POWER_PIN = 15;
 
-// ===================== PWM SETTINGS =====================
+// PWm
 
 const int PWM_CH   = 0;
 const int PWM_FREQ = 20000;
 const int PWM_RES  = 8;   // 0-255
 
-// ===================== MOTION SETTINGS =====================
+// MOtion speed 0-255
 
 const int EXT_SPEED = 150;
 
-// ===================== SERVO ANGLES =====================
+// Servo angles
 
 // Wall angles
 const int WALL_LEFT_PICKUP   = 40;
@@ -48,18 +48,17 @@ const int WALL_LEFT_OPEN     = 0;
 const int WALL_RIGHT_OPEN    = 180;
 
 // Flap angles
-// Use gentler numbers so it does not grind into the end stops.
-// Tune these on the robot if needed.
-const int FLAP_OPEN   = 55;   // was more aggressive before
-const int FLAP_SETTLE = 16;   // soft "home" position, not jammed hard shut
 
-// ===================== TRACK CURRENT POSITIONS =====================
+const int FLAP_OPEN   = 55;   
+const int FLAP_SETTLE = 16;   
+
+// Track current pos
 
 int leftPos  = WALL_LEFT_PICKUP;
 int rightPos = WALL_RIGHT_PICKUP;
 int flapPos  = FLAP_SETTLE;
 
-// ===================== EXTENDER FUNCTIONS =====================
+// Extender Rack
 
 void stopExtender() {
   digitalWrite(EXT_IN1, LOW);
@@ -82,7 +81,7 @@ void extenderBackward(int speedVal) {
   Serial.println("Extender backward");
 }
 
-// ===================== ACTUATOR FUNCTIONS =====================
+// Actuator
 
 void stopActuator() {
   digitalWrite(IN1, LOW);
@@ -102,7 +101,7 @@ void retractActuator() {
   Serial.println("Actuator retracting");
 }
 
-// ===================== SERVO ATTACH / DETACH =====================
+// Servo attatch / degtacth
 
 void attachWalls() {
   if (!wallLeftServo.attached()) {
@@ -144,7 +143,7 @@ void detachFlap() {
   Serial.println("Flap servo detached");
 }
 
-// ===================== SLOW SERVO MOVEMENT =====================
+// Slow servo moving 
 
 void moveWallsSlow(int targetLeft, int targetRight, int stepDelay = 20) {
   attachWalls();
@@ -192,7 +191,7 @@ void moveFlapSlow(int targetFlap, int stepDelay = 30) {
   Serial.println(flapPos);
 }
 
-// ===================== FLAP ACTION =====================
+// Flappy bird
 
 // Open flap, allow dump, then return to a soft repeatable end position
 void runFlapDumpSequence() {
@@ -208,7 +207,7 @@ void runFlapDumpSequence() {
   delay(300);
 }
 
-// ===================== SETUP =====================
+
 
 void setup() {
   pinMode(POWER_PIN, OUTPUT);
@@ -245,11 +244,9 @@ void setup() {
   wallRightServo.write(rightPos);
   delay(800);
 
-  // IMPORTANT:
-  // Do NOT attach or move flap here.
-  // That prevents startup jump / pull-in noise.
 
-  // ===================== HOPPER SEQUENCE =====================
+
+  // Hopper Sequende
 
   // Stage 1: Lift up
   Serial.println("Stage 1: Lift up");
