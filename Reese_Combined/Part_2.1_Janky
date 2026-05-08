@@ -1,0 +1,312 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+Servo wallLeftServo;
+Servo wallRightServo;
+Servo FlapServo;
+
+// ===================== PIN DEFINITIONS =====================
+
+// L298N pins for scissor actuator
+const int ENA = 1;
+const int IN1 = 2;
+const int IN2 = 3;
+
+// Extender motor driver pins
+const int EXT_EN  = 4;
+const int EXT_IN1 = 43;
+const int EXT_IN2 = 44;
+
+// Servo pins
+static const int WALL_LEFT_PIN   = 10;
+static const int WALL_RIGHT_PIN  = 11;
+static const int FLAP_SERVO_PIN  = 12;
+
+// Status / power pin
+const int POWER_PIN = 15;
+
+// ===================== PWM SETTINGS =====================
+
+const int PWM_CH   = 0;
+const int PWM_FREQ = 20000;
+const int PWM_RES  = 8;   // 0-255
+
+// ===================== MOTION SETTINGS =====================
+
+const int EXT_SPEED = 150;
+
+// ===================== SERVO ANGLES =====================
+
+// Wall angles
+const int WALL_LEFT_PICKUP   = 40;
+const int WALL_RIGHT_PICKUP  = 140;
+
+const int WALL_LEFT_DROP     = 120;   // 45 deg down
+const int WALL_RIGHT_DROP    = 60;
+
+const int WALL_LEFT_OPEN     = 0;
+const int WALL_RIGHT_OPEN    = 180;
+
+// Flap angles
+// Use gentler numbers so it does not grind into the end stops.
+// Tune these on the robot if needed.
+const int FLAP_OPEN   = 55;   // was more aggressive before
+const int FLAP_SETTLE = 16;   // soft "home" position, not jammed hard shut
+
+// ===================== TRACK CURRENT POSITIONS =====================
+
+int leftPos  = WALL_LEFT_PICKUP;
+int rightPos = WALL_RIGHT_PICKUP;
+int flapPos  = FLAP_SETTLE;
+
+// ===================== EXTENDER FUNCTIONS =====================
+
+void stopExtender() {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, 0);
+  Serial.println("Extender stopped");
+}
+
+void extenderForward(int speedVal) {
+  digitalWrite(EXT_IN1, HIGH);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender forward");
+}
+
+void extenderBackward(int speedVal) {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, HIGH);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender backward");
+}
+
+// ===================== ACTUATOR FUNCTIONS =====================
+
+void stopActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  Serial.println("Actuator stopped");
+}
+
+void extendActuator() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  Serial.println("Actuator extending");
+}
+
+void retractActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  Serial.println("Actuator retracting");
+}
+
+// ===================== SERVO ATTACH / DETACH =====================
+
+void attachWalls() {
+  if (!wallLeftServo.attached()) {
+    wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
+    delay(50);
+  }
+  if (!wallRightServo.attached()) {
+    wallRightServo.attach(WALL_RIGHT_PIN, 500, 2400);
+    delay(50);
+  }
+  Serial.println("Wall servos attached");
+}
+
+void detachWalls() {
+  if (wallLeftServo.attached()) {
+    wallLeftServo.detach();
+    delay(20);
+  }
+  if (wallRightServo.attached()) {
+    wallRightServo.detach();
+    delay(20);
+  }
+  Serial.println("Wall servos detached");
+}
+
+void attachFlap() {
+  if (!FlapServo.attached()) {
+    FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    delay(50);
+  }
+  Serial.println("Flap servo attached");
+}
+
+void detachFlap() {
+  if (FlapServo.attached()) {
+    FlapServo.detach();
+    delay(20);
+  }
+  Serial.println("Flap servo detached");
+}
+
+// ===================== SLOW SERVO MOVEMENT =====================
+
+void moveWallsSlow(int targetLeft, int targetRight, int stepDelay = 20) {
+  attachWalls();
+
+  int startLeft = leftPos;
+  int startRight = rightPos;
+
+  int stepCount = max(abs(targetLeft - startLeft), abs(targetRight - startRight));
+  if (stepCount == 0) return;
+
+  for (int i = 1; i <= stepCount; i++) {
+    int newLeft  = startLeft  + (targetLeft  - startLeft)  * i / stepCount;
+    int newRight = startRight + (targetRight - startRight) * i / stepCount;
+
+    wallLeftServo.write(newLeft);
+    wallRightServo.write(newRight);
+    delay(stepDelay);
+  }
+
+  leftPos = targetLeft;
+  rightPos = targetRight;
+
+  Serial.print("Walls moved to L=");
+  Serial.print(leftPos);
+  Serial.print(" R=");
+  Serial.println(rightPos);
+}
+
+void moveFlapSlow(int targetFlap, int stepDelay = 30) {
+  attachFlap();
+
+  int startFlap = flapPos;
+  int stepCount = abs(targetFlap - startFlap);
+  if (stepCount == 0) return;
+
+  for (int i = 1; i <= stepCount; i++) {
+    int newFlap = startFlap + (targetFlap - startFlap) * i / stepCount;
+    FlapServo.write(newFlap);
+    delay(stepDelay);
+  }
+
+  flapPos = targetFlap;
+
+  Serial.print("Flap moved to ");
+  Serial.println(flapPos);
+}
+
+// ===================== FLAP ACTION =====================
+
+// Open flap, allow dump, then return to a soft repeatable end position
+void runFlapDumpSequence() {
+  Serial.println("Flap: opening");
+  moveFlapSlow(FLAP_OPEN, 30);
+  delay(600);   // allow time for rocks / flap to clear
+
+  Serial.println("Flap: returning to settle position");
+  moveFlapSlow(FLAP_SETTLE, 35);
+  delay(700);   // let it physically fall and settle repeatably
+
+  detachFlap(); // stop holding and screeching
+  delay(300);
+}
+
+// ===================== SETUP =====================
+
+void setup() {
+  pinMode(POWER_PIN, OUTPUT);
+  digitalWrite(POWER_PIN, HIGH);
+
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("Starting hopper sequence");
+
+  // Servo PWM rate
+  wallLeftServo.setPeriodHertz(50);
+  wallRightServo.setPeriodHertz(50);
+  FlapServo.setPeriodHertz(50);
+
+  // Actuator pins
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  digitalWrite(ENA, HIGH);
+
+  // Extender pins
+  pinMode(EXT_IN1, OUTPUT);
+  pinMode(EXT_IN2, OUTPUT);
+
+  ledcSetup(PWM_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(EXT_EN, PWM_CH);
+
+  stopActuator();
+  stopExtender();
+
+  // Only set walls at startup
+  attachWalls();
+  wallLeftServo.write(leftPos);
+  wallRightServo.write(rightPos);
+  delay(800);
+
+  // IMPORTANT:
+  // Do NOT attach or move flap here.
+  // That prevents startup jump / pull-in noise.
+
+  // ===================== HOPPER SEQUENCE =====================
+
+  // Stage 1: Lift up
+  Serial.println("Stage 1: Lift up");
+  extendActuator();
+  delay(10000);
+
+  stopActuator();
+  delay(2000);
+
+  // Stage 2: Extend out
+  Serial.println("Stage 2: Extender out");
+  extenderBackward(EXT_SPEED);
+  delay(1100);
+
+  stopExtender();
+  delay(2000);
+
+  // Stage 3: Move walls/scoop to 45 deg down
+  Serial.println("Stage 3: Walls to 45 deg down");
+  moveWallsSlow(WALL_LEFT_DROP, WALL_RIGHT_DROP, 15);
+  delay(1000);
+
+  // Stage 4: Open flap ONLY here, then let it settle repeatably
+  Serial.println("Stage 4: Flap dump sequence");
+  runFlapDumpSequence();
+
+  // Stage 5: Open walls fully if needed
+  Serial.println("Stage 5: Walls fully open");
+  moveWallsSlow(WALL_LEFT_OPEN, WALL_RIGHT_OPEN, 15);
+  delay(2000);
+
+  // Stage 6: Return walls to pickup shape
+  Serial.println("Stage 6: Walls back to pickup");
+  moveWallsSlow(WALL_LEFT_PICKUP, WALL_RIGHT_PICKUP, 15);
+  delay(1000);
+
+  // Stage 7: Retract extender
+  Serial.println("Stage 7: Extender back");
+  extenderForward(EXT_SPEED);
+  delay(1100);
+
+  stopExtender();
+  delay(2000);
+
+  // Stage 8: Lower lift
+  Serial.println("Stage 8: Lift down");
+  retractActuator();
+  delay(8500);
+
+  stopActuator();
+  delay(2000);
+
+  detachWalls();
+  detachFlap();
+
+  Serial.println("Sequence complete");
+}
+
+void loop() {
+}
