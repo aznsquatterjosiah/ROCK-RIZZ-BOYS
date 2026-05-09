@@ -1,0 +1,245 @@
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+ 
+TFT_eSPI tft = TFT_eSPI();
+ 
+// =====================================================
+// 4 x FIT0441 motors
+// No FG used
+// 0 = fastest, 255 = stop
+// =====================================================
+ 
+// ---------- Motor pin mappings from your diagram ----------
+struct Motor {
+  int pwmPin;
+  int dirPin;
+  int pwmCh;
+};
+ 
+// Front Left
+Motor FL = {1, 2, 0};
+ 
+// Front Right
+Motor FR = {43, 44, 1};
+//Connected
+ 
+// Back Left
+Motor BL = {11, 12, 2};
+ 
+// Back Right
+Motor BBR = {17, 21, 3};
+//Connected
+ 
+// ---------- PWM settings ----------
+const int PWM_FREQ = 20000;
+const int PWM_RES  = 8;
+ 
+// ---------- Helper functions ----------
+void setupMotor(const Motor& m) {
+  pinMode(m.dirPin, OUTPUT);
+  ledcSetup(m.pwmCh, PWM_FREQ, PWM_RES);
+  ledcAttachPin(m.pwmPin, m.pwmCh);
+  ledcWrite(m.pwmCh, 255);   // stop
+}
+ 
+void setMotorPercent(const Motor& m, float percent, bool forward) {
+  percent = constrain(percent, 0.0f, 100.0f);
+ 
+  // FIT0441: 0 = full speed, 255 = stop
+  uint8_t rawPWM = 255 - (uint8_t)(percent * 255.0f / 100.0f);
+ 
+  digitalWrite(m.dirPin, forward ? HIGH : LOW);
+  ledcWrite(m.pwmCh, rawPWM);
+}
+ 
+void stopMotor(const Motor& m) {
+  ledcWrite(m.pwmCh, 255);
+}
+ 
+void stopAllMotors() {
+  stopMotor(FL);
+  stopMotor(FR);
+  stopMotor(BL);
+  stopMotor(BBR);
+}
+ 
+void driveAll(float percent, bool forward) {
+  setMotorPercent(FL, percent, forward);
+  setMotorPercent(FR, percent, forward);
+  setMotorPercent(BL, percent, forward);
+  setMotorPercent(BBR, percent, forward);
+}
+ 
+// Optional: control each wheel separately
+void driveIndividual(float fl, float fr, float bl, float br, bool forward) {
+  setMotorPercent(FL, fl, forward);
+  setMotorPercent(FR, fr, forward);
+  setMotorPercent(BL, bl, forward);
+  setMotorPercent(BBR, br, forward);
+}
+ 
+// =====================================================
+// Added mecanum movement functions
+// Time-based for now (no encoders)
+// =====================================================
+ 
+void moveForward(float percent, unsigned long durationMs) {
+  setMotorPercent(FL,  percent, false);
+  setMotorPercent(FR,  percent, true);
+  setMotorPercent(BL,  percent, false);
+  setMotorPercent(BBR, percent, true);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void moveReverse(float percent, unsigned long durationMs) {
+  setMotorPercent(FL,  percent, true);
+  setMotorPercent(FR,  percent, false);
+  setMotorPercent(BL,  percent, true);
+  setMotorPercent(BBR, percent, false);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void crabRight(float percent, unsigned long durationMs) {
+  setMotorPercent(FL,  percent, false);
+  setMotorPercent(FR,  percent, false);
+  setMotorPercent(BL,  percent, true);
+  setMotorPercent(BBR, percent, true);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void crabLeft(float percent, unsigned long durationMs) {
+  setMotorPercent(FL,  percent, true);
+  setMotorPercent(FR,  percent, false);
+  setMotorPercent(BL,  percent, true);
+  setMotorPercent(BBR, percent, false);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void turnLeft(float percent, unsigned long durationMs) {
+  setMotorPercent(FL,  percent, true); //false
+  setMotorPercent(FR,  percent, true);
+  setMotorPercent(BL,  percent, true);
+  setMotorPercent(BBR, percent, true);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void turnRight(float percent, unsigned long durationMs) {
+  setMotorPercent(FL,  percent, false);
+  setMotorPercent(FR,  percent, false);
+  setMotorPercent(BL,  percent, false);
+  setMotorPercent(BBR, percent, false);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void curveForwardLeft(float outerPercent, float innerPercent, unsigned long durationMs) {
+  setMotorPercent(FL,  innerPercent, true);
+  setMotorPercent(FR,  outerPercent, true);
+  setMotorPercent(BL,  innerPercent, true);
+  setMotorPercent(BBR, outerPercent, true);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void curveForwardRight(float outerPercent, float innerPercent, unsigned long durationMs) {
+  setMotorPercent(FL,  outerPercent, true);
+  setMotorPercent(FR,  innerPercent, true);
+  setMotorPercent(BL,  outerPercent, true);
+  setMotorPercent(BBR, innerPercent, true);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void curveReverseLeft(float outerPercent, float innerPercent, unsigned long durationMs) {
+  setMotorPercent(FL,  innerPercent, false);
+  setMotorPercent(FR,  outerPercent, false);
+  setMotorPercent(BL,  innerPercent, false);
+  setMotorPercent(BBR, outerPercent, false);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void curveReverseRight(float outerPercent, float innerPercent, unsigned long durationMs) {
+  setMotorPercent(FL,  outerPercent, false);
+  setMotorPercent(FR,  innerPercent, false);
+  setMotorPercent(BL,  outerPercent, false);
+  setMotorPercent(BBR, innerPercent, false);
+ 
+  delay(durationMs);
+  stopAllMotors();
+}
+ 
+void setup() {
+  pinMode(15, OUTPUT); // as per your earlier request
+  digitalWrite(15, HIGH);
+ 
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+ 
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
+ 
+  tft.setCursor(20, 40);
+  tft.println("Hello!");
+ 
+  tft.setCursor(20, 80);
+  tft.println("LilyGO T-S3");
+ 
+  setupMotor(FL);
+  setupMotor(FR);
+  setupMotor(BL);
+  setupMotor(BBR);
+ 
+  stopAllMotors();
+}
+ 
+void loop() {
+  
+ 
+moveForward(100,1000);
+delay(500);
+
+stopAllMotors();
+delay(1000);
+
+
+turnLeft(100, 400);
+delay(500);
+
+stopAllMotors();
+delay(1000);
+
+moveReverse(100,2000);
+delay(500);
+
+stopAllMotors();
+delay(1000);
+
+turnLeft(100, 400);
+delay(500);
+
+stopAllMotors();
+delay(1000);
+
+moveReverse(100,500);
+delay(500);
+
+stopAllMotors();
+delay(1000);
+}
+ 
