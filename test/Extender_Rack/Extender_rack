@@ -56,13 +56,13 @@ void setup() {
 }
  
 void loop() {
-  extenderForward(EXT_SPEED);
+  extenderBackward(EXT_SPEED);
   delay(2000);
  
   stopExtender();
   delay(1000);
  
-  extenderBackward(EXT_SPEED);
+  extenderForward(EXT_SPEED);
   delay(2000);
  
   stopExtender();
