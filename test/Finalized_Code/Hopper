@@ -1,0 +1,311 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+// SERVO OBJECTS
+
+Servo wallServo360;   // green thick 360 continuous servo
+Servo flapServo;      // normal flap servo
+
+// L298N ACTUATOR PINS
+
+const int ENA = 1;
+const int IN1 = 2;
+const int IN2 = 3;
+
+// EXTENDER MOTOR PINS
+
+const int EXT_EN  = 4;
+const int EXT_IN1 = 43;
+const int EXT_IN2 = 44;
+
+// PWM SETTINGS
+
+const int PWM_CH   = 0;
+const int PWM_FREQ = 20000;
+const int PWM_RES  = 8;
+
+// SERVO PINS
+
+static const int WALL_SERVO_PIN = 11; // green 360 servo
+static const int FLAP_SERVO_PIN = 12; // flap servo
+
+const int POWER_PIN = 15;
+
+// SPEED
+
+const int EXT_SPEED = 150;
+
+// 360 SERVO SETTINGS
+
+static const int SERVO_STOP = 1500;
+static const int SERVO_CW   = 1000;
+static const int SERVO_CCW  = 2000;
+
+// 360 SERVO TIMING
+// Working out:
+// DOWN -> FACE_FORWARD = CW 500 ms
+// FACE_FORWARD -> ANGLE_UP = CW 200 ms
+// ANGLE_UP -> DROP_ROCKS = CCW 400 ms
+// DROP_ROCKS -> DOWN = CCW 300 ms approx, tune if needed
+
+static const int WALL_FACE_FORWARD_TIME = 500;
+static const int WALL_ANGLE_UP_TIME     = 200;
+static const int WALL_UP_TO_DROP_TIME   = 400;
+static const int WALL_DROP_TO_DOWN_TIME = 300;
+
+// FLAP ANGLES
+
+const int FLAP_DOWN = 10;
+const int FLAP_UP   = 70;
+
+int currentFlap = FLAP_DOWN;
+
+// MOTOR / ACTUATOR FUNCTIONS
+
+void stopExtender() {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, 0);
+  Serial.println("Extender stopped");
+}
+
+void extenderForward(int speedVal) {
+  digitalWrite(EXT_IN1, HIGH);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender forward");
+}
+
+void extenderBackward(int speedVal) {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, HIGH);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender backward");
+}
+
+void stopActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  Serial.println("Actuator stopped");
+}
+
+void extendActuator() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  Serial.println("Actuator extending");
+}
+
+void retractActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  Serial.println("Actuator retracting");
+}
+
+// 360 WALL SERVO FUNCTIONS
+
+void stopWallServo() {
+  wallServo360.writeMicroseconds(SERVO_STOP);
+}
+
+void rotateWallServo(int pulse, int timeMs) {
+  wallServo360.writeMicroseconds(pulse);
+  delay(timeMs);
+  stopWallServo();
+  delay(300);
+}
+
+// WALL STATES
+
+void wallFaceForward() {
+  Serial.println("Wall: FACE FORWARD");
+  rotateWallServo(SERVO_CW, WALL_FACE_FORWARD_TIME);
+}
+
+void wallAngleUp() {
+  Serial.println("Wall: ANGLE UP");
+  rotateWallServo(SERVO_CW, WALL_ANGLE_UP_TIME);
+}
+
+void drop_rocks() {
+  Serial.println("Wall: DROP_ROCKS");
+  // From ANGLE_UP, move CCW through facing forward,
+  // then continue another 45 degrees downward.
+  rotateWallServo(SERVO_CCW, WALL_UP_TO_DROP_TIME);
+}
+
+void wallBackDownFromDrop() {
+  Serial.println("Wall: BACK DOWN FROM DROP POSITION");
+  rotateWallServo(SERVO_CCW, WALL_DROP_TO_DOWN_TIME);
+}
+
+// FLAP SERVO FUNCTIONS
+
+void attachFlap() {
+  if (!flapServo.attached()) {
+    flapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    delay(50);
+  }
+}
+
+void detachFlap() {
+  if (flapServo.attached()) {
+    flapServo.detach();
+    delay(20);
+  }
+}
+
+void moveFlapSlow(int targetFlap, int stepDelay = 35) {
+  attachFlap();
+
+  int startFlap = currentFlap;
+  int steps = abs(targetFlap - startFlap);
+
+  if (steps == 0) {
+    return;
+  }
+
+  for (int i = 1; i <= steps; i++) {
+    int newFlap = startFlap + (targetFlap - startFlap) * i / steps;
+    flapServo.write(newFlap);
+    delay(stepDelay);
+  }
+
+  currentFlap = targetFlap;
+
+  Serial.print("Flap at ");
+  Serial.println(currentFlap);
+}
+
+void flapDown() {
+  Serial.println("Flap: DOWN");
+  moveFlapSlow(FLAP_DOWN, 35);
+}
+
+void flapOpen() {
+  Serial.println("Flap: OPEN");
+  moveFlapSlow(FLAP_UP, 45);
+}
+
+// SETUP
+
+void setup() {
+  pinMode(POWER_PIN, OUTPUT);
+  digitalWrite(POWER_PIN, HIGH);
+
+  Serial.begin(115200);
+
+  // 360 wall servo setup
+  wallServo360.setPeriodHertz(50);
+  wallServo360.attach(WALL_SERVO_PIN, 800, 2200);
+  stopWallServo();
+
+  // Flap servo setup
+  flapServo.setPeriodHertz(50);
+  attachFlap();
+  flapDown();
+
+  // Linear actuator setup
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  digitalWrite(ENA, HIGH);
+
+  // Extender setup
+  pinMode(EXT_IN1, OUTPUT);
+  pinMode(EXT_IN2, OUTPUT);
+
+  ledcSetup(PWM_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(EXT_EN, PWM_CH);
+
+  stopExtender();
+  stopActuator();
+
+  Serial.println("Combined actuator, extender, 360 wall servo, and flap code ready.");
+
+  // ----------------------------------------------------
+  // HOPPER SEQUENCE
+  // ----------------------------------------------------
+
+  // 
+  delay(4000);
+
+  // Step 1: Actuator up
+
+  Serial.println("Step 1: Actuator up");
+  extendActuator();
+  delay(7100);      //
+
+  stopActuator();
+  delay(2000);
+
+  // Step 2: Extend rack
+
+  Serial.println("Step 2: Extend rack");
+  extenderForward(EXT_SPEED);
+  delay(1300);
+
+  stopExtender();
+  delay(2000);
+
+  // Step 3: Wall movement to drop rocks
+  Serial.println("Step 3: Move wall to drop rocks");
+
+
+  drop_rocks();
+  delay(2000);
+
+
+  // Step 5: 
+  Serial.println("Step 5: Close flap");
+  flapOpen();
+  delay(2000);
+
+  // Step 6: Retract rack
+  Serial.println("Step 6: Retract rack");
+  extenderBackward(EXT_SPEED);
+  delay(1400);
+
+  stopExtender();
+  delay(2000);
+
+  // cal
+
+  // Step 7: Return wall back down
+  Serial.println("Step 7: Return wall to original down position");
+  wallBackDownFromDrop();
+  delay(2000);
+
+  // Step 8: Make sure flap is down
+  Serial.println("Step 8: Flap down");
+  flapOpen();
+  delay(2000);
+
+
+
+  
+  // Cal
+
+
+  Serial.println("Step 1: Actuator up");
+  extendActuator();
+  delay(6000);
+
+  stopActuator();
+  delay(2000);
+
+
+
+
+  Serial.println("Step 9: Retract actuator");
+  retractActuator();
+  delay(9500);
+
+  stopActuator();
+  delay(2000);
+
+  Serial.println("Sequence complete.");
+}
+
+void loop() {
+  // Empty because the full sequence runs once in setup.
+}

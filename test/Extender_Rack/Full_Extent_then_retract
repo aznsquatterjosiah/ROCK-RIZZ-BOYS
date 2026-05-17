@@ -56,13 +56,15 @@
   }
   
   void loop() {
-    extenderBackward(EXT_SPEED);
+    delay(3000);
+
+    extenderForward(EXT_SPEED);
     delay(1600);
 
     stopExtender();
     delay(1000);
   
-    extenderForward(EXT_SPEED);
+    extenderBackward(EXT_SPEED);
     delay(1600);
   
     stopExtender();

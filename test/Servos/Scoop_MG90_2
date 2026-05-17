@@ -1,0 +1,84 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+Servo wallServo;   // green line thick 360 servo
+
+static const int WALL_SERVO_PIN = 11; // green
+
+// Z6393 continuous servo specs
+static const int SERVO_STOP = 1500;
+static const int SERVO_CW   = 1000;   // one direction
+static const int SERVO_CCW  = 2000;   // opposite direction
+
+// Tuned timing values
+static const int TIME_DOWN_TO_FORWARD = 500;  // down to facing forward
+static const int TIME_45_DEG          = 200;  // approx 45 degrees
+static const int TIME_UP_TO_DROP      = 400;  // 45 up to 45 down
+static const int TIME_DROP_TO_DOWN    = 300;  // drop position back to original down
+
+void stopServo() {
+  wallServo.writeMicroseconds(SERVO_STOP);
+}
+
+void rotateServo(int pulse, int timeMs) {
+  wallServo.writeMicroseconds(pulse);
+  delay(timeMs);
+  stopServo();
+  delay(300); // small settling pause
+}
+
+// -------------------- STATES --------------------
+
+void face_forward() {
+  Serial.println("STATE: FACE_FORWARD");
+  rotateServo(SERVO_CW, TIME_DOWN_TO_FORWARD);
+}
+
+void angle_up() {
+  Serial.println("STATE: ANGLE_UP");
+  rotateServo(SERVO_CW, TIME_45_DEG);
+}
+
+void drop_rocks() {
+  Serial.println("STATE: DROP_ROCKS");
+  // From ANGLE_UP, go back through facing forward, then 45 degrees downward
+  rotateServo(SERVO_CCW, TIME_UP_TO_DROP);
+}
+
+void back_down_to_original() {
+  Serial.println("STATE: BACK_DOWN_TO_ORIGINAL");
+  rotateServo(SERVO_CCW, TIME_DROP_TO_DOWN);
+}
+
+void setup() {
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
+
+  Serial.begin(115200);
+
+  wallServo.setPeriodHertz(50);
+  wallServo.attach(WALL_SERVO_PIN, 800, 2200);
+
+  stopServo();
+
+  Serial.println("Starting servo sequence...");
+}
+
+void loop() {
+  // ASSUMPTION:
+  // Servo starts physically at DOWN position before powering on.
+
+  delay(1000);
+
+  face_forward();
+  delay(2000);
+
+  angle_up();
+  delay(2000);
+
+  drop_rocks();
+  delay(2000);
+
+  back_down_to_original();
+  delay(2000);
+}

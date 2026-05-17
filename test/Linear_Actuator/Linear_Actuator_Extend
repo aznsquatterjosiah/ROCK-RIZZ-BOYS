@@ -1,47 +1,47 @@
-#include <Arduino.h>
+  #include <Arduino.h>
 
-// L298N pins
-const int ENA = 1;  // choose the ESP32 pin connected to ENA
-const int IN1 = 2;
-const int IN2 = 3;
+  // L298N pins
+  const int ENA = 1;  // choose the ESP32 pin connected to ENA
+  const int IN1 = 2;
+  const int IN2 = 3;
 
-void stopActuator() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-}
+  void stopActuator() {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+  }
 
-void extendActuator() {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-}
+  void extendActuator() {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+  }
 
-void retractActuator() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-}
+  void retractActuator() {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+  }
 
-void setup() {
-  pinMode(15, OUTPUT);
-  digitalWrite(15, HIGH);
+  void setup() {
+    pinMode(15, OUTPUT);
+    digitalWrite(15, HIGH);
 
-  pinMode(ENA, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
+    pinMode(ENA, OUTPUT);
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
 
-  digitalWrite(ENA, HIGH);   // enable the channel
+    digitalWrite(ENA, HIGH);   // enable the channel
 
-  stopActuator();
-  delay(500);
+    stopActuator();
+    delay(500);
 
-  // Go one way for 10 seconds
+    // Go one way for 10 seconds
 
 
-  // Then the other way for 10 seconds
-  extendActuator();
-  delay(15000);
+    // Then the other way for 10 seconds
+    extendActuator();
+    delay(15000);
 
-  stopActuator();
-}
+    stopActuator();
+  }
 
-void loop() {
-}
+  void loop() {
+  }

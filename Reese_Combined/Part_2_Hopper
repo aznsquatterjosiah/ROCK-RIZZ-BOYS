@@ -96,12 +96,12 @@
     // Stage 1 Initial Position 
 
 
-    // FlapServo.attach(WALL_LEFT_PIN, 500, 2400);  // attach seperately 
-    // FlapServo.attach(WALL_RIGHT_PIN, 500, 2400);  // attach seperately 
+    FlapServo.attach(WALL_LEFT_PIN, 500, 2400);  // attach seperately 
+    FlapServo.attach(WALL_RIGHT_PIN, 500, 2400);  // attach seperately 
 
-    // wallLeftServo.write(40); // scoop facing forward
-    // wallRightServo.write(140);
-    // delay(2000);
+    wallLeftServo.write(40); // scoop facing forward
+    wallRightServo.write(140);
+    delay(2000);
 
 
 
@@ -135,7 +135,7 @@
 
 
 
-    // FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);  // attach seperately 
+    FlapServo.attach(FLAP_SERVO_PIN, 500, 2400);  // attach seperately 
 
 
     // FLAP

@@ -204,7 +204,7 @@ void setup() {
   delay(1000);
 
   retractActuator();
-  delay(850);
+  delay(1000);
 
   stopActuator();
   delay(1000);
@@ -234,11 +234,6 @@ void setup() {
   moveWallsSequential(WALL_LEFT_90, WALL_RIGHT_90, 30);
   delay(400);
 
-  // detach here only if scoop does not need to hold
-  // detachWalls();
-  // delay(300);
-
-  // Stage 6: extend forward
   
 
   // Stage 7: Retract LA

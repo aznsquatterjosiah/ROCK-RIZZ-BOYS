@@ -1,0 +1,65 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+ 
+Servo wallServo;   // green line thick 360 servo
+ 
+static const int WALL_SERVO_PIN = 11; // green
+ 
+// Z6393 continuous servo specs
+static const int SERVO_STOP = 1500;
+static const int SERVO_CW   = 1000;   // one direction
+static const int SERVO_CCW  = 2000;   // opposite direction
+ 
+// Approx timing from spec: around 0.11-0.12 sec per 60 degrees.
+// Start conservative, then tune these.
+static const int TIME_90_DEG  = 180;  // ms
+static const int TIME_50_DEG  = 100;  // ms
+static const int TIME_140_DEG = 280;  // ms
+ 
+void stopServo() {
+  wallServo.writeMicroseconds(SERVO_STOP);
+}
+ 
+void rotateServo(int pulse, int timeMs) {
+  wallServo.writeMicroseconds(pulse);
+  delay(timeMs);
+  stopServo();
+  delay(300); // small settling pause
+}
+ 
+void setup() {
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
+ 
+  Serial.begin(115200);
+ 
+  wallServo.setPeriodHertz(50);
+  wallServo.attach(WALL_SERVO_PIN, 800, 2200);
+ 
+  stopServo();
+ 
+  Serial.println("Starting servo sequence...");
+}
+ 
+void loop() {
+  // ASSUMPTION:
+  // Servo starts physically at DOWN position before powering on.
+  
+  delay(1000);
+  
+ 
+  Serial.println("FACE FORWARD");
+  rotateServo(SERVO_CW, 500);
+  stopServo();
+  delay(2000);
+ 
+  Serial.println("ANGLE UP");
+  rotateServo(SERVO_CW, 200);
+  stopServo();
+  delay(2000);
+ 
+  Serial.println("BACK DOWN TO ORIGINAL POSITION");
+  rotateServo(SERVO_CCW, 560);
+  stopServo();
+  delay(2000);
+}

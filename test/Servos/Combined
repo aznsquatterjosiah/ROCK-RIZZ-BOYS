@@ -1,0 +1,115 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+// -------------------- SERVO OBJECTS --------------------
+Servo wallServo360;   // continuous rotation / 360 servo on green wire
+Servo flapServo;      // normal positional flap servo
+
+// -------------------- PINS --------------------
+static const int WALL_SERVO_PIN = 11; // green 360 servo
+static const int FLAP_SERVO_PIN = 12; // flap servo
+
+static const int POWER_PIN = 15;
+
+// -------------------- 360 SERVO SETTINGS --------------------
+// Continuous servo uses pulse width, not angles
+static const int SERVO_STOP = 1500;
+static const int SERVO_CW   = 1000;
+static const int SERVO_CCW  = 2000;
+
+// - FUNCTIONS FOR 360 SERVO 
+void stopWallServo() {
+  wallServo360.writeMicroseconds(SERVO_STOP);
+}
+
+void rotateWallServo(int pulse, int timeMs) {
+  wallServo360.writeMicroseconds(pulse);
+  delay(timeMs);
+  stopWallServo();
+  delay(300); // settling pause
+}
+
+void wallFaceForward() {
+  Serial.println("Wall: FACE FORWARD");
+  rotateWallServo(SERVO_CW, 500);
+}
+
+void wallAngleUp() {
+  Serial.println("Wall: ANGLE UP");
+  rotateWallServo(SERVO_CW, 200);
+}
+
+void wallBackDown() {
+  Serial.println("Wall: BACK DOWN");
+  rotateWallServo(SERVO_CCW, 560);
+}
+
+// FUNCTIONS FOR FLAP SERVO 
+void flapDown() {
+  Serial.println("Flap: DOWN");
+  flapServo.write(90);
+  delay(500);
+}
+
+void flapOpen() {
+  Serial.println("Flap: OPEN");
+  flapServo.write(0);
+  delay(500);
+}
+
+// setup
+void setup() {
+  pinMode(POWER_PIN, OUTPUT);
+  digitalWrite(POWER_PIN, HIGH);
+
+  Serial.begin(115200);
+
+  // 360 servo
+  wallServo360.setPeriodHertz(50);
+  wallServo360.attach(WALL_SERVO_PIN, 800, 2200);
+  stopWallServo();
+
+  // Normal flap servo
+  flapServo.setPeriodHertz(50);
+  flapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+  flapDown();
+
+  Serial.println("Combined servo code ready.");
+}
+
+// loop
+void loop() {
+  // Issue your order here manually.
+
+  // Example sequence:
+
+  flapOpen();
+  delay(2000);
+
+
+  wallFaceForward();
+  delay(2000);
+
+  wallAngleUp();
+  delay(2000);
+
+  flapOpen();
+  delay(2000);
+
+
+  
+  flapDown();
+  delay(2000);
+
+ 
+
+  wallBackDown();
+  delay(2000);
+
+
+  // Stop repeating forever
+  while (true) {
+    stopWallServo();
+    delay(1000);
+  }
+}

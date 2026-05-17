@@ -209,22 +209,43 @@ void setup() {
 }
  
 void loop() {
-  moveForward(100, 1500);
-  delay(2000);
+  
  
   crabLeft(100, 1500);
-  delay(2000);
- 
-  crabRight(100, 1500);
-  delay(2000);
- 
-  moveReverse(100, 1500);
-  delay(2000);
+  delay(4000);                  // test 
 
+  stopAllMotors();
+  delay(1000);
+ 
   turnLeft(70, 1000);
   delay(2000);
-  
+
+  stopAllMotors();
+  delay(1000);
+
+
+
+  moveReverse(100, 1000);
+  delay(1000);
+
+  stopAllMotors();
+  delay(1000);
+
+
+
   turnRight(70, 1000);
   delay(2000);
+
+
+  stopAllMotors();
+  delay(1000);
+
+
+  moveForward(100, 1000);
+  delay(1000);
+
+  stopAllMotors();
+  delay(1000);
+
 }
  

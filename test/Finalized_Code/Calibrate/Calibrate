@@ -40,7 +40,8 @@ void setup() {
   extendActuator();
   delay(15000);
 
-  retractActuator(9500);
+  retractActuator();
+  delay(9500);
 
   stopActuator();
 }

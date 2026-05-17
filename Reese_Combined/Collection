@@ -1,0 +1,249 @@
+#include <Arduino.h>
+#include <ESP32Servo.h>
+
+Servo wallLeftServo;
+Servo wallRightServo;   // FROM THE REAR
+Servo flapServo;
+
+// Pins
+const int ENA = 1;
+const int IN1 = 2;
+const int IN2 = 3;
+
+const int EXT_EN  = 4;
+const int EXT_IN1 = 43;
+const int EXT_IN2 = 44;
+
+static const int WALL_LEFT_PIN   = 10;   // yellow
+static const int WALL_RIGHT_PIN  = 11;   // green
+static const int FLAP_SERVO_PIN  = 12;   // flap
+
+const int POWER_PIN = 15;
+
+// PWM
+const int PWM_CH    = 0;
+const int PWM_FREQ  = 20000;
+const int PWM_RES   = 8;
+const int EXT_SPEED = 150;
+
+// Servo Angles
+// Walls / scoop
+const int WALL_LEFT_START   = 180;
+const int WALL_RIGHT_START  = 0;
+
+const int WALL_LEFT_90      = 80;
+const int WALL_RIGHT_90     = 100;
+
+const int WALL_LEFT_45      = 40;
+const int WALL_RIGHT_45     = 140;
+
+// Flap
+const int FLAP_DOWN = 90;
+const int FLAP_UP   = 0;
+
+// Motor / Actuator 
+void stopExtender() {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, 0);
+  Serial.println("Extender stopped");
+}
+
+void extenderForward(int speedVal) {
+  digitalWrite(EXT_IN1, HIGH);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender forward");
+}
+
+void extenderBackward(int speedVal) {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, HIGH);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender backward");
+}
+
+void stopActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  Serial.println("Actuator stopped");
+}
+
+void extendActuator() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  Serial.println("Actuator extending");
+}
+
+void retractActuator() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  Serial.println("Actuator retracting");
+}
+
+// Servo helpers 
+void setWalls(int leftAngle, int rightAngle) {
+  wallLeftServo.write(leftAngle);
+  wallRightServo.write(rightAngle);
+
+  Serial.print("Walls set to L=");
+  Serial.print(leftAngle);
+  Serial.print(" R=");
+  Serial.println(rightAngle);
+}
+
+void setFlap(int flapAngle) {
+  flapServo.write(flapAngle);
+
+  Serial.print("Flap set to ");
+  Serial.println(flapAngle);
+}
+
+void attachFlap() {
+  if (!flapServo.attached()) {
+    flapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    delay(200);
+  }
+}
+
+void detachFlap() {
+  if (flapServo.attached()) {
+    flapServo.detach();
+    delay(100);
+  }
+}
+
+// Setup
+void setup() {
+  pinMode(POWER_PIN, OUTPUT);
+  digitalWrite(POWER_PIN, HIGH);
+
+  Serial.begin(115200);
+
+  wallLeftServo.setPeriodHertz(50);
+  wallRightServo.setPeriodHertz(50);
+  flapServo.setPeriodHertz(50);
+
+  // Attach scoop wall servos
+  wallLeftServo.attach(WALL_LEFT_PIN, 500, 2400);
+  delay(200);
+
+  wallRightServo.attach(WALL_RIGHT_PIN, 500, 2400);
+  delay(200);
+
+  // Do NOT attach flap here.
+  // This stops the flap from moving immediately on startup.
+
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  digitalWrite(ENA, HIGH);
+
+  pinMode(EXT_IN1, OUTPUT);
+  pinMode(EXT_IN2, OUTPUT);
+
+  ledcSetup(PWM_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(EXT_EN, PWM_CH);
+
+  stopExtender();
+  stopActuator();
+
+  // Set known starting scoop position
+  setWalls(WALL_LEFT_START, WALL_RIGHT_START);
+  delay(1000);
+
+  // Sequence 
+
+  // // Stage 1: retract LA to level with wall
+  // retractActuator();
+  // delay(1000);
+  // stopActuator();
+  // delay(1000);
+
+  // Stage 2: Extend Extender Rack
+  extenderForward(EXT_SPEED);
+  delay(1250);
+  stopExtender();
+  delay(2000);
+
+  // Stage 3: Retract Extender Rack
+  extenderBackward(EXT_SPEED);
+  delay(1000);
+  stopExtender();
+  delay(2000);
+
+  // Stage 4: upsies
+  extendActuator();
+  delay(3000);
+  stopActuator();
+  delay(2000);
+
+  // Stage 5: Scoop 90 deg ONLY
+    // Stage 10: scoop goes to 45 degrees
+  
+  setWalls(WALL_LEFT_90, WALL_RIGHT_90);
+  delay(800);
+
+  // Stage 7: Retract LA
+  retractActuator();
+  delay(5400);
+  stopActuator();
+  delay(2000);
+
+  // Stage 8: Extend Forward Max
+  extenderForward(EXT_SPEED);
+  delay(1250);
+  stopExtender();
+  delay(2000);
+
+  // Stage 9: flap goes DOWN
+  attachFlap();
+  setFlap(FLAP_DOWN);
+  delay(1000);
+  
+
+  // Stage 10: scoop goes to 45 degrees
+  setWalls(WALL_LEFT_45, WALL_RIGHT_45);
+  delay(1000);
+
+
+    // Stage 8: Extend Forward Max
+  extenderBackward(EXT_SPEED);
+  delay(1200);
+  stopExtender();
+  delay(2000);
+
+
+
+  // Stage 11: actuator moves after flap and scoop are set
+  extendActuator();
+  delay(4000);
+  stopActuator();
+  delay(2000);
+
+
+  // Calibration 
+
+
+
+
+  // Stage 12: Extend full way
+  extendActuator();
+  delay(10000);
+  stopActuator();
+  delay(2000);
+
+  // Stage 13: Retract to start state
+  retractActuator();
+  delay(9500);
+  stopActuator();
+  delay(2000);
+
+
+
+  stopActuator();
+  stopExtender();
+}
+
+void loop() {
+}

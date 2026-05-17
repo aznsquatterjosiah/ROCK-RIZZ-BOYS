@@ -22,10 +22,22 @@ void setup() {
 }
 
 void loop() {
+
+  delay(2000);
+
+
+
+  wallLeftServo.write(0);      // facing down, starting state
+  delay(2000);
+
+
   wallLeftServo.write(90);      // facing down, starting state
   delay(2000);
 
-  wallLeftServo.write(0);      // facing down, starting state
+ 
+
+
+  wallLeftServo.write(120);
   delay(2000);
 
 }
