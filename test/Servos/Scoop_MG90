@@ -59,7 +59,12 @@ void loop() {
   delay(2000);
  
   Serial.println("BACK DOWN TO ORIGINAL POSITION");
-  rotateServo(SERVO_CCW, 560);
+  rotateServo(SERVO_CCW, 700);
   stopServo();
   delay(2000);
+
+
+
+
+
 }

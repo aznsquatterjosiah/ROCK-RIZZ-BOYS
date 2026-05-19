@@ -43,12 +43,10 @@ static const int SERVO_CCW  = 2000;
 
 // Tune these times if needed
 
-static const int WALL_FACE_FORWARD_TIME = 580;
-static const int WALL_ANGLE_UP_TIME     = 600;   // was 200
+static const int WALL_FACE_FORWARD_TIME = 620;
+static const int WALL_ANGLE_UP_TIME     = 900;
 static const int TIME_UP_TO_DROP      = 300;
 static const int WALL_BACK_DOWN_TIME    = 560;
-
-
 
 
 
@@ -127,6 +125,7 @@ void wallBackDown() {
   rotateWallServo(SERVO_CCW, WALL_BACK_DOWN_TIME);
 }
 
+
 void attachFlap() {
   if (!flapServo.attached()) {
     flapServo.attach(FLAP_SERVO_PIN, 500, 2400);
@@ -192,7 +191,7 @@ void setup() {
   delay(1000);
 
   stopActuator();
-  delay(2000);
+  delay(1000);
 
 
   // step 2: Flap open
@@ -204,19 +203,19 @@ void setup() {
   // Step 3: Actuate Down
 
   retractActuator();   // retract down for wall to push
-  delay(2000);
+  delay(650);
 
   stopActuator();
   delay(1000);
 
-   // Step 2: delay for driving forward 
+  // Step 2: delay for driving forward 
 
   delay(2000);
 
   // Step 4: Extend extender rack to push rocks
 
   extenderForward(EXT_SPEED);
-  delay(800);
+  delay(1350);
 
   stopExtender();
   delay(1000);
@@ -224,7 +223,7 @@ void setup() {
   // Step 5: Retract extender rack to original position
 
   extenderBackward(EXT_SPEED);
-  delay(600);
+  delay(1150);
 
   stopExtender();
   delay(2000);
@@ -235,35 +234,29 @@ void setup() {
   delay(4000);
 
   stopActuator();
-  delay(2000);
+  delay(1000);
 
   // Step 7: Servo Scoop facing 90 deg 
 
   wallFaceForward();
-  delay(2000);
+  delay(3000);
 
 
   // Step 8: Retract LA level with ground
 
   retractActuator();
-  delay(5200);
+  delay(8000);
 
   stopActuator();
-  delay(2000);
+  delay(1000);
 
   // Step 9: Extend forward max to push rocks 
 
   extenderForward(EXT_SPEED);
-  delay(1450);
+  delay(1360);
 
   stopExtender();
-  delay(2000);
-
-
-
- 
-
-  
+  delay(1000);
 
 
   // Step 12: Extend actuator
@@ -278,20 +271,23 @@ void setup() {
   // Step 10: Anlge 45 Deg
 
   wallAngleUp();
-  delay(2000);
+  delay(3000);
 
   // 45 deg
 
   flapServo.write(120);
   delay(2000);
+
+   wallAngleUp();
+  delay(3000);
   
   // Step 13: Bring extender back
 
   extenderBackward(EXT_SPEED);
-  delay(1200);
+  delay(1500);
 
   stopExtender();
-  delay(2000);
+  delay(1000);
 
 
   // Calibration for start of next run:
@@ -317,12 +313,10 @@ void setup() {
 
 
 
-
-
   // Retract to start state
 
   retractActuator();
-  delay(9000);
+  delay(9500);
 
   stopActuator();
   delay(2000);
@@ -337,4 +331,4 @@ void setup() {
 
 void loop() {
  
-}
+} 
