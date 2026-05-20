@@ -12,6 +12,10 @@ const int ENA = 1;
 const int IN1 = 2;
 const int IN2 = 3;
 
+// LED
+
+const int LED_PIN = 15;   // change this to your LED pin
+
 // EXTENDER MOTOR PINS
 
 const int EXT_EN  = 4;
@@ -180,15 +184,17 @@ void setup() {
 
   // Initial Delay to allow button 
 
+
   flapServo.write(90);
   delay(2000);
+
 
   delay(4000);
 
   // Step 1: Actuate Up
 
   extendActuator();
-  delay(1000);
+  delay(1500);
 
   stopActuator();
   delay(1000);
@@ -200,10 +206,16 @@ void setup() {
   delay(2000);
  
 
+  extenderForward(EXT_SPEED);
+  delay(125);
+
+  stopExtender();
+  delay(1000);
+
   // Step 3: Actuate Down
 
   retractActuator();   // retract down for wall to push
-  delay(650);
+  delay(1250);
 
   stopActuator();
   delay(1000);
@@ -215,7 +227,7 @@ void setup() {
   // Step 4: Extend extender rack to push rocks
 
   extenderForward(EXT_SPEED);
-  delay(1350);
+  delay(1150);
 
   stopExtender();
   delay(1000);
@@ -245,7 +257,7 @@ void setup() {
   // Step 8: Retract LA level with ground
 
   retractActuator();
-  delay(8000);
+  delay(7000);
 
   stopActuator();
   delay(1000);
@@ -253,19 +265,10 @@ void setup() {
   // Step 9: Extend forward max to push rocks 
 
   extenderForward(EXT_SPEED);
-  delay(1360);
+  delay(1430);
 
   stopExtender();
   delay(1000);
-
-
-  // Step 12: Extend actuator
-
-  // extendActuator();
-  // delay(2000);
-
-  // stopActuator();
-  // delay(2000);
 
   
   // Step 10: Anlge 45 Deg
@@ -273,22 +276,22 @@ void setup() {
   wallAngleUp();
   delay(3000);
 
+
   // 45 deg
 
   flapServo.write(120);
   delay(2000);
 
-   wallAngleUp();
+  wallAngleUp();
   delay(3000);
   
   // Step 13: Bring extender back
 
   extenderBackward(EXT_SPEED);
-  delay(1500);
-
+  delay(1450);
+  
   stopExtender();
   delay(1000);
-
 
 
   // HOPPER STATES
@@ -330,36 +333,25 @@ void setup() {
   // Step 5 Retract, extender_rack 
 
   extenderBackward(EXT_SPEED);
-  delay(1400);
+  delay(1300);
 
   stopExtender();
   delay(1000);
 
 
 
-  // Scoop Wall Down
-
-  wallBackDown();
-  delay(2000);
-
-
-  // Flap to original position
-
-  flapDown();
-  delay(2000);
-
-
-
   // Retract to start state
 
   retractActuator();
-  delay(9500);
+  delay(8600);
 
   stopActuator();
   delay(1000);
+
+
+  digitalWrite(LED_PIN, HIGH);  // LED on
+  delay(1000);
  
-
-
 
 
   Serial.println("Sequence complete.");

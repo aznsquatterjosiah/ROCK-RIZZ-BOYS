@@ -214,15 +214,19 @@ void setup() {
  
 void loop() {
 
+
+stopAllMotors();
+delay(1000);
+
  // first movement forward 
 
-delay(11650);
+delay(13000);
 
 moveReverse(50,600);
 delay(500);
 
 
-delay(48000); // after sequence is complete  extacy number 47010
+delay(37000);
 
 
 // start movement 
@@ -254,11 +258,7 @@ delay(1000);
 // delay a certain amount while drop code initiates 
 
 
-delay(34200);
-
-
-
-
+delay(17000);
 
 
 //NOW RETREAT

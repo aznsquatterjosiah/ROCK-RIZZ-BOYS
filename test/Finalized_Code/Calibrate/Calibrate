@@ -38,10 +38,10 @@ void setup() {
 
   // Then the other way for 10 seconds
   extendActuator();
-  delay(15000);
+  delay(12000);
 
   retractActuator();
-  delay(9500);
+  delay(8600);
 
   stopActuator();
 }
