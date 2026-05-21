@@ -194,7 +194,7 @@ void setup() {
   // Step 1: Actuate Up
 
   extendActuator();
-  delay(1500);
+  delay(3600);
 
   stopActuator();
   delay(1000);
@@ -207,7 +207,7 @@ void setup() {
  
 
   extenderForward(EXT_SPEED);
-  delay(125);
+  delay(200);
 
   stopExtender();
   delay(1000);
@@ -215,7 +215,7 @@ void setup() {
   // Step 3: Actuate Down
 
   retractActuator();   // retract down for wall to push
-  delay(1250);
+  delay(2600);
 
   stopActuator();
   delay(1000);
@@ -265,7 +265,7 @@ void setup() {
   // Step 9: Extend forward max to push rocks 
 
   extenderForward(EXT_SPEED);
-  delay(1430);
+  delay(1480);
 
   stopExtender();
   delay(1000);
