@@ -341,7 +341,7 @@ void setup() {
 
 
   extenderForward(EXT_SPEED);
-  delay(155);
+  delay(70);
 
 
   stopExtender();
@@ -352,7 +352,7 @@ void setup() {
 
 
   retractActuator();
-  delay(1850);
+  delay(1835);
 
 
   stopActuator();
@@ -480,7 +480,7 @@ void setup() {
 
 
   extenderForward(EXT_SPEED);
-  delay(1300);
+  delay(1000);
 
 
   stopExtender();
@@ -501,11 +501,28 @@ void setup() {
   delay(2000);
 
 
+  flapServo.write(90);
+  delay(2000);
+
+  wallAngleUp();
+  delay(3000);
+
+  drop_rocks();
+  delay(2000);
+
+
+
+  flapDown();
+  delay(2000);
+
+
+
+
   // Step 5 Retract, extender_rack 
 
 
   extenderBackward(EXT_SPEED);
-  delay(1300);
+  delay(1000);
 
 
   stopExtender();
@@ -533,3 +550,5 @@ void setup() {
 
 
 void loop() {
+
+}

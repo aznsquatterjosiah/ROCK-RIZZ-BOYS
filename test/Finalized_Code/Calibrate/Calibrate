@@ -1,50 +1,537 @@
 #include <Arduino.h>
+#include <ESP32Servo.h>
+#include <TFT_eSPI.h>
 
-// L298N pins
-const int ENA = 1;  // choose the ESP32 pin connected to ENA
+
+// SERVO OBJECTS 
+
+
+Servo wallServo360;   // green thick 360 continuous servo
+Servo flapServo;      // normal flap servo
+
+
+// UART COMMUNICATION
+
+
+#define TX_PIN 17
+#define RX_PIN 18   // not used for sender, but needed for Serial2.begin
+
+
+// BUTTON
+
+
+#define BUTTON_PIN 0
+
+
+// TFT SCREEN
+
+
+#ifndef TFT_BL
+#define TFT_BL 4
+#endif
+
+
+TFT_eSPI tft;
+int16_t W = 0, H = 0;
+
+
+void showText(const char* msg, uint16_t color) {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(color, TFT_BLACK);
+  tft.drawString(msg, W / 2, H / 2, 4);
+}
+
+
+//  L298N ACTUATOR PINS
+
+
+const int ENA = 1;
 const int IN1 = 2;
 const int IN2 = 3;
+
+
+// LED
+
+
+const int LED_PIN = 13;   // change this to your LED pin
+
+
+// EXTENDER MOTOR PINS
+
+
+const int EXT_EN  = 4;
+const int EXT_IN1 = 43;
+const int EXT_IN2 = 44;
+
+
+// PWM SETTINGS 
+
+
+const int PWM_CH   = 8;
+const int PWM_FREQ = 20000;
+const int PWM_RES  = 8;
+
+
+// Servo Pins
+
+
+static const int WALL_SERVO_PIN = 11; // green 360 servo
+static const int FLAP_SERVO_PIN = 12; // flap servo
+
+
+const int POWER_PIN = 15;
+
+
+// Speed
+
+
+const int EXT_SPEED = 150;
+
+
+// 360 Servo Functions 
+
+
+static const int SERVO_STOP = 1500;
+static const int SERVO_CW   = 1000;
+static const int SERVO_CCW  = 2000;
+
+
+// Tune these times if needed
+
+
+static const int WALL_FACE_FORWARD_TIME = 620;
+static const int WALL_ANGLE_UP_TIME     = 900;
+static const int TIME_UP_TO_DROP        = 300;
+static const int WALL_BACK_DOWN_TIME    = 560;
+
+
+// Motor_Actuator Functions
+
+
+void stopExtender() {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, 0);
+  Serial.println("Extender stopped");
+}
+
+
+void extenderForward(int speedVal) {
+  digitalWrite(EXT_IN1, HIGH);
+  digitalWrite(EXT_IN2, LOW);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender forward");
+}
+
+
+void extenderBackward(int speedVal) {
+  digitalWrite(EXT_IN1, LOW);
+  digitalWrite(EXT_IN2, HIGH);
+  ledcWrite(PWM_CH, speedVal);
+  Serial.println("Extender backward");
+}
+
 
 void stopActuator() {
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, LOW);
+  Serial.println("Actuator stopped");
 }
+
 
 void extendActuator() {
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
+  Serial.println("Actuator extending");
 }
+
 
 void retractActuator() {
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, HIGH);
+  Serial.println("Actuator retracting");
 }
 
-void setup() {
-  pinMode(15, OUTPUT);
-  digitalWrite(15, HIGH);
 
+// 360 Servo Functions 
+
+
+void stopWallServo() {
+  wallServo360.writeMicroseconds(SERVO_STOP);
+}
+
+
+void rotateWallServo(int pulse, int timeMs) {
+  wallServo360.writeMicroseconds(pulse);
+  delay(timeMs);
+  stopWallServo();
+  delay(300);
+}
+
+
+void wallFaceForward() {
+  Serial.println("Wall: FACE FORWARD");
+  rotateWallServo(SERVO_CW, WALL_FACE_FORWARD_TIME);
+}
+
+
+void wallAngleUp() {
+  Serial.println("Wall: ANGLE UP");
+  rotateWallServo(SERVO_CW, WALL_ANGLE_UP_TIME);
+}
+
+
+void drop_rocks() {
+  Serial.println("STATE: DROP_ROCKS");
+  rotateWallServo(SERVO_CCW, TIME_UP_TO_DROP);
+}
+
+
+void wallBackDown() {
+  Serial.println("Wall: BACK DOWN TO ORIGINAL POSITION");
+  rotateWallServo(SERVO_CCW, WALL_BACK_DOWN_TIME);
+}
+
+
+void attachFlap() {
+  if (!flapServo.attached()) {
+    flapServo.attach(FLAP_SERVO_PIN, 500, 2400);
+    delay(50);
+  }
+}
+
+
+void flapDown() {
+  flapServo.write(0);
+}
+
+
+// Wait for Button 0 before starting
+
+
+void waitForButtonStart() {
+  showText("I AM WAITING", TFT_YELLOW);
+  Serial.println("I AM WAITING");
+
+
+  while (digitalRead(BUTTON_PIN) == HIGH) {
+    delay(20);
+  }
+
+
+  delay(50); // debounce
+
+
+  while (digitalRead(BUTTON_PIN) == LOW) {
+    delay(20);
+  }
+
+
+  Serial2.println("GO");      // send signal through TX pin 17
+  Serial.println("GO SENT");
+
+
+  showText("LESGO", TFT_GREEN);
+  delay(1000);
+}
+
+
+// Setup
+
+
+void setup() {
+  pinMode(POWER_PIN, OUTPUT);
+  digitalWrite(POWER_PIN, HIGH);
+
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+
+  Serial.begin(115200);
+
+
+  Serial2.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
+
+
+  // TFT setup
+  tft.init();
+  tft.setRotation(1);
+  W = tft.width();
+  H = tft.height();
+
+
+#ifdef TFT_BL
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+#endif
+
+
+  // 360 wall servo setup
+  wallServo360.setPeriodHertz(50);
+  wallServo360.attach(WALL_SERVO_PIN, 800, 2200);
+  stopWallServo();
+
+
+  // Flap servo setup
+  flapServo.setPeriodHertz(50);
+  attachFlap();
+  flapDown();
+
+
+  // Linear actuator setup
   pinMode(ENA, OUTPUT);
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
+  digitalWrite(ENA, HIGH);
 
-  digitalWrite(ENA, HIGH);   // enable the channel
+
+  // Extender setup
+  pinMode(EXT_IN1, OUTPUT);
+  pinMode(EXT_IN2, OUTPUT);
+
+
+  ledcSetup(PWM_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(EXT_EN, PWM_CH);
+
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+
+  stopExtender();
+  stopActuator();
+
+
+  Serial.println("Combined actuator, extender, 360 wall servo, and flap code ready.");
+
+
+  flapServo.write(90);
+  
+  // WAIT HERE FIRST
+  waitForButtonStart();
+
+
+  // EXISTING SEQUENCE STARTS HERE
+
+
+  flapServo.write(90);
+  delay(2000);
+
+
+  delay(4000);
+
+
+  // Step 1: Actuate Up
+
+
+  extendActuator();
+  delay(2600);
+
 
   stopActuator();
-  delay(500);
-
-  // Go one way for 10 seconds
+  delay(1000);
 
 
-  // Then the other way for 10 seconds
+  // step 2: Flap open
+
+
+  flapServo.write(0);  
+  delay(2000);
+
+
+  // extenderForward(EXT_SPEED);
+  // delay(90);
+
+
+  // stopExtender();
+  // delay(1000);
+
+
+  // Step 3: Actuate Down
+
+
+  retractActuator();
+  delay(1835);
+
+
+  stopActuator();
+  delay(1000);
+
+
+  // Step 2: delay for driving forward 
+
+
+  delay(2000);
+
+
+  // Step 4: Extend extender rack to push rocks
+
+
+  extenderForward(EXT_SPEED);
+  delay(1150);
+
+
+  stopExtender();
+  delay(1000);
+
+
+  // Step 5: Retract extender rack to original position
+
+
+  extenderBackward(EXT_SPEED);
+  delay(1150);
+
+
+  stopExtender();
+  delay(2000);
+
+
+  // Step 6: Actuate Up
+
+
+  extendActuator();
+  delay(2000);
+
+
+  stopActuator();
+  delay(1000);
+
+
+  // Step 7: Servo Scoop facing 90 deg 
+
+
+  wallFaceForward();
+  delay(3000);
+
+
+  // Step 8: Retract LA level with ground
+
+
+  retractActuator();
+  delay(5000);
+
+
+  stopActuator();
+  delay(1000);
+
+
+  // Step 9: Extend forward max to push rocks 
+
+
+  extenderForward(EXT_SPEED);
+  delay(1380);
+
+
+  stopExtender();
+  delay(1000);
+
+
+  // Step 10: Angle 45 Deg
+
+
+  wallAngleUp();
+  delay(3000);
+
+
+  // 45 deg
+
+
+  flapServo.write(120);
+  delay(2000);
+
+
+  wallAngleUp();
+  delay(3000);
+
+
+  // Step 13: Bring extender back
+
+
+  extenderBackward(EXT_SPEED);
+  delay(1450);
+
+
+  stopExtender();
+  delay(1000);
+
+
+  // HOPPER STATES
+
+
+  // delay for driving 
+
+
+  delay(13650);
+
+
+  // Step 1 Actuate Up 
+
+
   extendActuator();
   delay(15000);
 
-  retractActuator();
-  delay(8800);
 
   stopActuator();
+  delay(1000);
+
+
+  // Step 2 Extend, extender_rack 
+
+
+  extenderForward(EXT_SPEED);
+  delay(1300);
+
+
+  stopExtender();
+  delay(1000);
+
+
+  // Step 3 drop
+
+
+  drop_rocks();
+  delay(2000);
+
+
+  // step 4 flap open 
+
+
+  flapDown();
+  delay(2000);
+
+
+  // Step 5 Retract, extender_rack 
+
+
+  extenderBackward(EXT_SPEED);
+  delay(1300);
+
+
+  stopExtender();
+  delay(1000);
+
+
+  // Retract to start state
+
+
+  retractActuator();
+  delay(8600);
+
+
+  stopActuator();
+  delay(1000);
+
+
+  digitalWrite(LED_PIN, HIGH);
+  delay(1000);
+
+
+  showText("DONE", TFT_GREEN);
+  Serial.println("Sequence complete.");
 }
 
+
 void loop() {
+
 }

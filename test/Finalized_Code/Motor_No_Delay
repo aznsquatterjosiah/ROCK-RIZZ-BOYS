@@ -238,18 +238,8 @@ void curveReverseRight(float outerPercent, float innerPercent, unsigned long dur
 // Existing movement code moved into a function
 void runDrivingSequence() {
   stopAllMotors();
-  delay(1000);
+  delay(2000);
 
-
-  // first movement forward
-  delay(15000);
-
-
-  moveReverse(50, 600);
-  delay(500);
-
-
-  delay(40000);
 
 
   // start movement
@@ -276,7 +266,12 @@ void runDrivingSequence() {
   stopAllMotors();
   delay(1000);
 
-  turnLeft(50, 1200);
+
+
+
+
+
+  turnLeft(50, 1150);
   delay(500);
 
 
