@@ -100,7 +100,7 @@ static const int SERVO_CCW  = 2000;
 // Tune these times if needed
 
 
-static const int WALL_FACE_FORWARD_TIME = 620;
+static const int WALL_FACE_FORWARD_TIME = 620;   //620
 static const int WALL_ANGLE_UP_TIME     = 900;
 static const int TIME_UP_TO_DROP        = 300;
 static const int WALL_BACK_DOWN_TIME    = 560;
@@ -341,7 +341,7 @@ void setup() {
 
 
   extenderForward(EXT_SPEED);
-  delay(70);
+  delay(82);
 
 
   stopExtender();
@@ -369,7 +369,7 @@ void setup() {
 
 
   extenderForward(EXT_SPEED);
-  delay(1150);
+  delay(1250);
 
 
   stopExtender();
